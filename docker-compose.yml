@@ -1,0 +1,11 @@
+version: "3.8"
+services:
+  autolab-evaluator:
+    build: .
+    image: duckietown/dt-aido-autolab-evaluator:daffy-amd64
+    container_name: autolab-evaluator
+    stdin_open: true
+    tty: true
+    network_mode: "host"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock

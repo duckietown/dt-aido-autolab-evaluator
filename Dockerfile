@@ -1,16 +1,16 @@
 # parameters
-ARG REPO_NAME="<REPO_NAME_HERE>"
-ARG DESCRIPTION="<DESCRIPTION_HERE>"
-ARG MAINTAINER="<YOUR_FULL_NAME> (<YOUR_EMAIL_ADDRESS>)"
+ARG REPO_NAME="dt-aido-autolab-evaluator"
+ARG DESCRIPTION="Duckietown AI-DO Challenge Evaluator in a Robotarium/Autolab"
+ARG MAINTAINER="Jason Hu (jasonhu515@gmail.com)"
 # pick an icon from: https://fontawesome.com/v4.7.0/icons/
 ARG ICON="cube"
 
 # ==================================================>
 # ==> Do not change the code below this line
-ARG ARCH=arm32v7
+ARG ARCH=amd64
 ARG DISTRO=daffy
 ARG BASE_TAG=${DISTRO}-${ARCH}
-ARG BASE_IMAGE=dt-commons
+ARG BASE_IMAGE=duckietown-challenges-runner
 ARG LAUNCHER=default
 
 # define base image
@@ -27,9 +27,6 @@ ARG BASE_TAG
 ARG BASE_IMAGE
 ARG LAUNCHER
 
-# check build arguments
-RUN dt-build-env-check "${REPO_NAME}" "${MAINTAINER}" "${DESCRIPTION}"
-
 # define/create repository path
 ARG REPO_PATH="${SOURCE_DIR}/${REPO_NAME}"
 ARG LAUNCH_PATH="${LAUNCH_DIR}/${REPO_NAME}"
@@ -44,11 +41,11 @@ ENV DT_MODULE_ICON "${ICON}"
 ENV DT_MAINTAINER "${MAINTAINER}"
 ENV DT_REPO_PATH "${REPO_PATH}"
 ENV DT_LAUNCH_PATH "${LAUNCH_PATH}"
-ENV DT_LAUNCHER "${LAUNCHER}"
 
 # install apt dependencies
 COPY ./dependencies-apt.txt "${REPO_PATH}/"
-RUN dt-apt-install ${REPO_PATH}/dependencies-apt.txt
+RUN apt update
+RUN cat ${REPO_PATH}/dependencies-apt.txt | xargs apt install -y
 
 # install python3 dependencies
 COPY ./dependencies-py3.txt "${REPO_PATH}/"
@@ -60,10 +57,11 @@ COPY ./packages "${REPO_PATH}/packages"
 # install launcher scripts
 COPY ./launchers/. "${LAUNCH_PATH}/"
 COPY ./launchers/default.sh "${LAUNCH_PATH}/"
-RUN dt-install-launchers "${LAUNCH_PATH}"
+
+RUN echo ${LAUNCH_PATH}
 
 # define default command
-CMD ["bash", "-c", "dt-launcher-${DT_LAUNCHER}"]
+CMD ["bash", "-c", "${DT_LAUNCH_PATH}/default.sh"]
 
 # store module metadata
 LABEL org.duckietown.label.module.type="${REPO_NAME}" \
