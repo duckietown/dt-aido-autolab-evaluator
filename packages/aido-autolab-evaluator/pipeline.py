@@ -4,9 +4,12 @@ import multiprocessing
 from multiprocessing.context import SpawnContext
 import json
 import os
+import random
 import socket
 from time import sleep
-from typing import Optional
+import time
+import traceback
+from typing import Optional, List, TypedDict, Dict
 
 from duckietown_challenges import (
     dtserver_work_submission,
@@ -16,16 +19,18 @@ from duckietown_challenges import (
 from duckietown_challenges.challenges_constants import ChallengesConstants
 from duckietown_challenges.rest import get_duckietown_server_url
 from duckietown_challenges.rest_methods import (
-    AWSConfig, EvaluatorFeaturesDict, WorkSubmissionResultDict,
+    AWSConfig, ArtefactDict, EvaluatorFeaturesDict, WorkSubmissionResultDict,
 )
-from duckietown_challenges.types import SubmissionID
+from duckietown_challenges.types import JobStatusString, SubmissionID
 
 from duckietown_challenges_runner import __version__ as EVALUATOR_VERSION
-
 from duckietown_challenges_runner.runner import (
     NothingLeft,
-    upload_files,
     get_features,
+)
+from duckietown_challenges_runner.uploading import (
+    try_s3, upload_files,
+    get_files_to_upload,
 )
 
 from . import logger
@@ -36,6 +41,7 @@ from .heartbeat import heartbeat
 from .test_config import (
     DT_STAGING_SERVER_URL,
     DT_TOKEN,
+    TEST_DATA_DIR,
 )
 # IMPORTANT: use staging server when testing
 os.environ[ChallengesConstants.DTSERVER_ENV_NAME] = DT_STAGING_SERVER_URL
@@ -109,11 +115,49 @@ def autolab_evaluate():
 
     # upload_files
     logger.info("Uploading evaluation files to aws s3")
-    sleep(2)
+    data_dir = TEST_DATA_DIR
+    to_upload = get_files_to_upload(data_dir)
+    # logger.debug(to_upload)
+    try_s3(aws_config=aws_config)
+    uploaded: List[ArtefactDict] = upload_files(data_dir, aws_config=aws_config)
 
     # dtserver_report_job
     logger.info("Reporting job status to AIDO challenge server")
-    sleep(2)
+
+    class StatsDict(TypedDict):
+        scores: Dict[str, object]
+        msg: str
+
+    status:JobStatusString = ChallengesConstants.STATUS_JOB_SUCCESS
+    stats: StatsDict = {"msg": "tst ok", "scores": {}}
+    ntries = 5
+    interval = 30
+    report_res = None
+    while ntries >= 0:
+        # noinspection PyBroadException
+        try:
+            report_res = dtserver_report_job(
+                token,
+                job_id=job_id,
+                stats=stats,
+                result=status,
+                ipfs_hashes={},
+                machine_id=machine_id,
+                process_id=process_id,
+                evaluator_version=EVALUATOR_VERSION,
+                uploaded=uploaded,
+                impersonate=impersonate,
+                timeout=timeout,
+            )
+            break
+        except BaseException:
+            msg = "Could not report."
+            logger.warning(msg, e=traceback.format_exc())
+            logger.info(f"Retrying {ntries} more times after {interval} seconds")
+            ntries -= 1
+            time.sleep(interval + random.uniform(0, 2))
+
+    logger.info(report_res)
 
     # TODO: check if this proc is alive during above steps, possibly get Exception with a mp.Queue
     heartbeat_proc.terminate()

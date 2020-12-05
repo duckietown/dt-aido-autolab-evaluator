@@ -1,0 +1,55 @@
+robots:
+  ego0:
+    color: red
+    protocol: PROTOCOL_NORMAL
+    description: Playable robot ego0
+    controllable: true
+    configuration:
+      pose:
+        data: !!binary |
+          B1wUMyamkTwAAAAAAADwv1BBVENHWwFAAAAAAAAA8D8HXBQzJqaRPAAAAIDIduY/AAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAPA/
+        dtype: float64
+        shape:
+        - 3
+        - 3
+      velocity:
+        data: !!binary |
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAAAA
+        dtype: float64
+        shape:
+        - 3
+        - 3
+duckies: {}
+environment: "objects:\n  tag334:\n    kind: floor_tag\n    pose:\n      ~SE2Transform:\n\
+  \        p:\n        - 0.647\n        - 1.708\n        theta_deg: 270\n    tag:\n\
+  \      ~TagInstance:\n        family: 36h11\n        size: 0.08\n        tag_id:\
+  \ 334\n  tag335:\n    kind: floor_tag\n    pose:\n      ~SE2Transform:\n       \
+  \ p:\n        - 1.2229999999999999\n        - 2.282\n        theta_deg: 180\n  \
+  \  tag:\n      ~TagInstance:\n        family: 36h11\n        size: 0.08\n      \
+  \  tag_id: 335\n  tag336:\n    kind: floor_tag\n    pose:\n      ~SE2Transform:\n\
+  \        p:\n        - 2.202\n        - 2.7929999999999997\n        theta_deg: 315\n\
+  \    tag:\n      ~TagInstance:\n        family: 36h11\n        size: 0.08\n    \
+  \    tag_id: 336\n  tag337:\n    kind: floor_tag\n    pose:\n      ~SE2Transform:\n\
+  \        p:\n        - 1.698\n        - 1.8079999999999998\n        theta_deg: 90\n\
+  \    tag:\n      ~TagInstance:\n        family: 36h11\n        size: 0.08\n    \
+  \    tag_id: 337\n  tag338:\n    kind: floor_tag\n    pose:\n      ~SE2Transform:\n\
+  \        p:\n        - 1.696\n        - 1.116\n        theta_deg: 90\n    tag:\n\
+  \      ~TagInstance:\n        family: 36h11\n        size: 0.08\n        tag_id:\
+  \ 338\n  tag339:\n    kind: floor_tag\n    pose:\n      ~SE2Transform:\n       \
+  \ p:\n        - 1.222\n        - 0.647\n        theta_deg: 0\n    tag:\n      ~TagInstance:\n\
+  \        family: 36h11\n        size: 0.08\n        tag_id: 339\n  tag340:\n   \
+  \ kind: floor_tag\n    pose:\n      ~SE2Transform:\n        p:\n        - 2.1959999999999997\n\
+  \        - 0.155\n        theta_deg: 225\n    tag:\n      ~TagInstance:\n      \
+  \  family: 36h11\n        size: 0.08\n        tag_id: 340\n  tag341:\n    kind:\
+  \ floor_tag\n    pose:\n      ~SE2Transform:\n        p:\n        - 0.648\n    \
+  \    - 1.2229999999999999\n        theta_deg: 270\n    tag:\n      ~TagInstance:\n\
+  \        family: 36h11\n        size: 0.08\n        tag_id: 341\ntile_size: 0.585\n\
+  tiles:\n- - asphalt\n  - curve_left/W\n  - straight/W\n  - curve_left/N\n- - curve_left/W\n\
+  \  - curve_right/S\n  - asphalt\n  - straight/N\n- - straight/S\n  - asphalt\n \
+  \ - asphalt\n  - straight/N\n- - curve_left/S\n  - curve_right/E\n  - asphalt\n\
+  \  - straight/N\n- - asphalt\n  - curve_left/S\n  - straight/E\n  - curve_left/E\n"
+player_robots:
+- ego0
+scenario_name: LF-real-validation-000

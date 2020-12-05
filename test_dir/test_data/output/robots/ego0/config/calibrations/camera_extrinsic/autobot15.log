@@ -1,0 +1,32 @@
+********************
+Calibrating using the ROS image stream...
+
+Topic to listen to is: /autobot15/camera_node/image/compressed
+Let's wait for an image. Say cheese!
+Image captured!
+Picture taken: (480, 640, 3) 
+Disableing old homography
+Obtaining camera info
+Get default homography
+Using filename /data/config/calibrations/camera_extrinsic/default.yaml
+Rectify image
+Calculate GPG
+Ordered Dict
+K: [[328.42672966   0.         332.19398588]
+ [  0.         329.46866725 223.63007002]
+ [  0.           0.           1.        ]]
+P: [[216.67721558   0.         331.08776996   0.        ]
+ [  0.         273.71755981 220.5754014    0.        ]
+ [  0.           0.           1.           0.        ]]
+new_camera_matrix: [[328.42672966   0.         528.        ]
+ [  0.         329.46866725 396.        ]
+ [  0.           0.           1.        ]]
+
+
+To check that this worked well, place the robot on the road, and run:
+
+    rosrun complete_image_pipeline single_image
+
+Look at the produced jpgs.
+
+
