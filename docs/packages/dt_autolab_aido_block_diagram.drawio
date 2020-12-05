@@ -1,14 +1,14 @@
-<mxfile host="app.diagrams.net" modified="2020-12-05T16:55:46.339Z" agent="5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.66 Safari/537.36" etag="CTec8i141x8yoZx--kAR" version="13.9.2" type="github">
+<mxfile host="app.diagrams.net" modified="2020-12-05T16:56:25.899Z" agent="5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.66 Safari/537.36" etag="yiJzm-plA-r7s1APWwVW" version="13.9.2" type="github">
   <diagram id="ujUPNPm-SbitqOQeh7i7" name="Page-1">
     <mxGraphModel dx="1876" dy="1128" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
         <mxCell id="-BotaJdeT2_oavy9sCpY-2" value="Duckietown" style="rounded=0;whiteSpace=wrap;html=1;fontSize=31;" vertex="1" parent="1">
-          <mxGeometry x="40" y="721" width="760" height="80" as="geometry" />
+          <mxGeometry x="40" y="761" width="760" height="80" as="geometry" />
         </mxCell>
         <mxCell id="-BotaJdeT2_oavy9sCpY-3" value="Duckiebot" style="shape=image;verticalLabelPosition=bottom;labelBackgroundColor=#ffffff;verticalAlign=top;aspect=fixed;imageAspect=0;image=https://docs.duckietown.org/daffy/opmanual_duckiebot/out/assets/data-from-img-db19-step_32-4f9158d6.png;fontSize=20;" vertex="1" parent="1">
-          <mxGeometry x="344.64" y="809.71" width="150.71" height="131.29" as="geometry" />
+          <mxGeometry x="344.64" y="849.71" width="150.71" height="131.29" as="geometry" />
         </mxCell>
         <mxCell id="-BotaJdeT2_oavy9sCpY-4" value="Watchtower" style="shape=image;verticalLabelPosition=bottom;labelBackgroundColor=#ffffff;verticalAlign=top;aspect=fixed;imageAspect=0;image=https://docs.duckietown.org/daffy/opmanual_autolab/out/assets/data-from-img-WT19-B_complete_assembly-79ad9bce.png;fontSize=20;" vertex="1" parent="1">
           <mxGeometry x="202.01" y="370" width="82.99" height="259.97" as="geometry" />
@@ -29,7 +29,7 @@
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="-BotaJdeT2_oavy9sCpY-10" value="AIDO" style="rounded=0;whiteSpace=wrap;html=1;fontSize=31;" vertex="1" parent="1">
-          <mxGeometry x="40" y="160" width="760" height="80" as="geometry" />
+          <mxGeometry x="40" y="120" width="760" height="80" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>
