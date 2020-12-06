@@ -11,8 +11,8 @@ if 'DEBUG' in os.environ and os.environ['DEBUG'].lower() in ['true', 'yes', '1']
     logger.setLevel(logging.DEBUG)
 
 
-DATA_DIR = os.environ('AIDO_DATA_DIR', '/data/logs/aido')
-AUTOLABS_DIR = os.path.join(DATA_DIR, 'autolab')
+DATA_DIR = os.environ.get('AIDO_DATA_DIR', '/data/logs/aido')
+AUTOLABS_DIR = os.environ.get('AUTOLABS_DIR', '/autolabs')
 
 
 class Storage:
@@ -58,3 +58,14 @@ class AutobotStatus:
 
     def matches(self, other: 'AutobotStatus') -> bool:
         return other.estop == self.estop and other.moving == self.moving
+
+
+@dataclasses.dataclass
+class ContainerStatus:
+    name: str
+    status: str
+    # one of:
+    #   NOTFOUND, UNKNOWN, CREATED, RUNNING, PAUSED, RESTARTING, REMOVING, EXITED, DEAD, REMOVED
+
+    def matches(self, other: 'ContainerStatus') -> bool:
+        return other.name == self.name and other.status == self.status

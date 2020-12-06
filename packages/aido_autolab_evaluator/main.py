@@ -3,14 +3,15 @@
 import argparse
 from typing import List, Dict, Any
 
+from aido_autolab_evaluator.interfaces import AIDOAutolabEvaluatorCLIInterface
 from .constants import Storage
 from .entities import Autolab
 from .evaluator import AIDOAutolabEvaluator
 
 
-def _parse_features(features: List[str]) -> Dict[str, Any]:
+def _parse_features(_features: List[str]) -> Dict[str, Any]:
     _args = {}
-    for feature in features:
+    for feature in _features:
         fname, fvalue, *_ = feature.replace(':=', '=').split('=') + [None]
         # try to parse the value as int
         try:
@@ -31,7 +32,7 @@ if __name__ == '__main__':
                         help='Duckietown Token of the Autolab operator')
     parser.add_argument('-a', '--autolab', type=str, required=True,
                         help='Name of the Autolab to use')
-    parser.add_argument('-f', '--feature', action='append', nargs=1,
+    parser.add_argument('-f', '--feature', action='append', nargs=1, dest='features', default=[],
                         help='Features available to this Autolab')
     # parse args
     parsed = parser.parse_args()
@@ -39,8 +40,17 @@ if __name__ == '__main__':
     # initialize storage space
     Storage.initialize(parsed.aido)
     # load autolab
-    autolab = Autolab.load(parsed.autolab)
+    autolab = None
+    try:
+        autolab = Autolab.load(parsed.autolab)
+    except FileNotFoundError:
+        exit(1)
     # create an evaluator
-    evaluator = AIDOAutolabEvaluator(parsed.token)
-    #
+    evaluator = AIDOAutolabEvaluator(parsed.token, autolab)
+    # attach an interface
+    iface = AIDOAutolabEvaluatorCLIInterface(evaluator)
+    iface.start()
+
+
+
 

@@ -1,16 +1,21 @@
-import abc
-import json
 import os
+import abc
 import time
-from typing import List, Dict, Any
-
+import json
+import yaml
+import glob
 import requests
 import dataclasses
 import subprocess
 
-import yaml
+from pathlib import Path
+from typing import List, Dict, Any, Optional
+
+from dt_authentication import DuckietownToken
+from duckietown_challenges.rest_methods import EvaluatorFeaturesDict
 
 from .constants import ROSBagStatus, AutobotStatus, logger, AUTOLABS_DIR
+from .job import EvaluationJob
 
 
 class Entity:
@@ -106,7 +111,6 @@ class Robot(Entity, abc.ABC):
         return f"http://{self.hostname}/{api}/{resource}"
 
 
-@dataclasses.dataclass
 class Autobot(Robot):
 
     @property
@@ -137,7 +141,6 @@ class Autobot(Robot):
             time.sleep(self._heartbeat_period)
 
 
-@dataclasses.dataclass
 class Watchtower(Robot):
 
     def join(self, until: AutobotStatus):
@@ -153,7 +156,18 @@ class Autolab:
 
     @staticmethod
     def load(name: str):
-        with open(os.path.join(AUTOLABS_DIR, f"{name}.yaml")) as fin:
+        # compile full autolab path
+        autolab_fpath = os.path.join(AUTOLABS_DIR, f"{name}.yaml")
+        # load list of autolab
+        all_autolabs = Autolab._get_all_autolabs()
+        # make sure the autolab exists
+        if name not in all_autolabs:
+            autolab_lst = '- ' + '\n\t - '.join(all_autolabs) if len(all_autolabs) else '(none)'
+            logger.error(f"\nAutolab `{name}` not found."
+                         f"\nAvailable options are: \n\t {autolab_lst}")
+            raise FileNotFoundError(autolab_fpath)
+        # load autolab from disk
+        with open(autolab_fpath) as fin:
             autolab = yaml.safe_load(fin)
         # parse robots
         robots = {}
@@ -166,6 +180,13 @@ class Autolab:
             robots[lname] = robot
         return Autolab(name=name, robots=robots, features=autolab['features'])
 
+    @staticmethod
+    def _get_all_autolabs() -> List[str]:
+        # compile autolab path pattern
+        autolabs_star_fpath = os.path.join(AUTOLABS_DIR, "*.yaml")
+        # glob that pattern
+        autolabs_fpaths = glob.glob(autolabs_star_fpath)
+        return [Path(fpath).stem for fpath in autolabs_fpaths]
 
 def _call_api(url: str) -> dict:
     res = None
@@ -191,3 +212,15 @@ def _call_api(url: str) -> dict:
                      f'\n\tError:   {res["data"]}\n')
     # ---
     return res['data']
+
+
+@dataclasses.dataclass
+class EvaluatorStatus:
+    token: str
+    autolab: Autolab
+    job: Optional[EvaluationJob]
+    machine_id: str
+    process_id: str
+    features: EvaluatorFeaturesDict
+    operator: DuckietownToken
+

@@ -2,6 +2,7 @@ import os
 import socket
 import time
 import traceback
+from builtins import BaseException
 from threading import Thread
 from typing import Optional, Dict, Any
 
@@ -17,25 +18,27 @@ from duckietown_challenges.rest_methods import \
 
 from dt_authentication import DuckietownToken
 
+from dt_class_utils import DTProcess
 from .constants import logger
 from .job import EvaluationJob
-from .entities import Autolab, Autobot
+from .entities import Autolab, Autobot, EvaluatorStatus
 
 
 class AIDOAutolabEvaluator:
 
     def __init__(self, token: str, autolab: Autolab, features: dict = None):
+        # parse args
         if features is None:
             features = dict()
+        self._custom_features = features
         # validate token
-        DuckietownToken.from_string(token)
+        self._operator = DuckietownToken.from_string(token)
         # configuration
         self._token: str = token
         self._autolab = autolab
         self._job: Optional[EvaluationJob] = None
         self._machine_id: str = socket.gethostname()
         self._process_id: str = str(os.getpid())
-        self._features: EvaluatorFeaturesDict = get_features(features, use_ipfs=False)
         self._impersonate: Optional[UserID] = None
         # ---
         self._server_url = get_duckietown_server_url()
@@ -47,6 +50,14 @@ class AIDOAutolabEvaluator:
     @property
     def token(self) -> str:
         return self._token
+
+    @property
+    def operator(self) -> DuckietownToken:
+        return self._operator
+
+    @property
+    def autolab(self) -> Autolab:
+        return self._autolab
 
     @property
     def job(self) -> Optional[EvaluationJob]:
@@ -62,7 +73,10 @@ class AIDOAutolabEvaluator:
 
     @property
     def features(self) -> str:
-        return self._features
+        return get_features(
+            {**self._custom_features, **self._autolab.features},
+            use_ipfs=False
+        )
 
     @property
     def who(self) -> str:
@@ -72,8 +86,31 @@ class AIDOAutolabEvaluator:
     def version(self) -> str:
         return __version__
 
+    @property
+    def status(self) -> EvaluatorStatus:
+        return EvaluatorStatus(
+            token=self.token,
+            autolab=self.autolab,
+            job=self.job,
+            machine_id=self.machine_id,
+            process_id=self.process_id,
+            features=self.features,
+            operator=self.operator
+        )
+
     def clear(self):
         self._job = None
+
+    def shutdown(self):
+        # terminate heart thread
+        try:
+            self._heart.shutdown()
+            self._heart.join()
+        except BaseException:
+            pass
+        # abort job (if any)
+        if self._job is not None:
+            self._job.report(ChallengesConstants.STATUS_JOB_ABORTED, 'Operator SIGINT')
 
     def abort(self, reason: str, status: JobStatusString = ChallengesConstants.STATUS_JOB_ABORTED):
         logger.warning(f"Received request to abort, reason reads `{reason}`.")
@@ -119,6 +156,7 @@ class AIDOAutolabEvaluatorHeartBeat(Thread):
         self._last_beat = 0
 
     def shutdown(self):
+        logger.info("[heart]: - Received a shutdown signal, terminating at the next beat.")
         self._is_shutdown = True
 
     def time_to_beat(self) -> bool:
@@ -130,6 +168,7 @@ class AIDOAutolabEvaluatorHeartBeat(Thread):
                 self._beat()
                 self._last_beat = time.time()
             time.sleep(1)
+        logger.info("[heart]: - Terminated.")
 
     def _beat(self):
         if self._evaluator.job is None:
