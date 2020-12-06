@@ -1,0 +1,47 @@
+features:
+  map_aido5_large_loop: 1
+  nduckiebots: 3
+  nduckies: 20
+
+robots:
+  # autobots
+  - local_name: autobot01
+    remote_name: ego0
+    type: duckiebot
+    priority: 3
+
+  - local_name: autobot02
+    remote_name: ego1
+    type: duckiebot
+    priority: 2
+
+  - local_name: autobot03
+    remote_name: ego2
+    type: duckiebot
+    priority: 1
+
+
+  # watchtowers
+  - local_name: watchtower01
+    remote_name: watchtower01
+    type: watchtower
+
+  - local_name: watchtower02
+    remote_name: watchtower02
+    type: watchtower
+
+  - local_name: watchtower03
+    remote_name: watchtower03
+    type: watchtower
+
+  - local_name: watchtower04
+    remote_name: watchtower04
+    type: watchtower
+
+  - local_name: watchtower05
+    remote_name: watchtower05
+    type: watchtower
+
+  - local_name: watchtower06
+    remote_name: watchtower06
+    type: watchtower

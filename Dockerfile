@@ -77,3 +77,9 @@ LABEL org.duckietown.label.module.type="${REPO_NAME}" \
     org.duckietown.label.maintainer="${MAINTAINER}"
 # <== Do not change the code above this line
 # <==================================================
+
+# prepare data for temporary data storage
+ENV AIDO_DATA_DIR="/data/logs/aido"
+
+# copy autolabs specifications
+COPY assets/autolab "${AIDO_DATA_DIR}/autolab"

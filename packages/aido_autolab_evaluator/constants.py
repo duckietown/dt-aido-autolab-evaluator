@@ -1,4 +1,38 @@
+import os
+import logging
+import dataclasses
+
 from enum import IntEnum
+
+
+logging.basicConfig()
+logger = logging.getLogger('aido-autolab-evaluator')
+if 'DEBUG' in os.environ and os.environ['DEBUG'].lower() in ['true', 'yes', '1']:
+    logger.setLevel(logging.DEBUG)
+
+
+DATA_DIR = os.environ('AIDO_DATA_DIR', '/data/logs/aido')
+AUTOLABS_DIR = os.path.join(DATA_DIR, 'autolab')
+
+
+class Storage:
+
+    AIDO_VERSION = None
+
+    @classmethod
+    def initialize(cls, aido_version: int):
+        cls.AIDO_VERSION = aido_version
+        os.makedirs(cls._base_dir(), exist_ok=True)
+
+    @classmethod
+    def dir(cls, dname: str) -> str:
+        if cls.AIDO_VERSION is None:
+            raise ValueError("Call `Storage.initialize()` first.")
+        return os.path.abspath(os.path.join(cls._base_dir(), dname))
+
+    @classmethod
+    def _base_dir(cls) -> str:
+        return os.path.abspath(os.path.join(DATA_DIR, f'aido_{cls.AIDO_VERSION}'))
 
 
 class ROSBagStatus(IntEnum):
@@ -17,6 +51,10 @@ class ROSBagStatus(IntEnum):
         }[status]
 
 
-class AutobotStatus(IntEnum):
-    STOP = 0
-    GO = 1
+@dataclasses.dataclass
+class AutobotStatus:
+    estop: bool
+    moving: bool
+
+    def matches(self, other: 'AutobotStatus') -> bool:
+        return other.estop == self.estop and other.moving == self.moving
