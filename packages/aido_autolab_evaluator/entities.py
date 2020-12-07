@@ -1,9 +1,11 @@
+import io
 import os
 import abc
 import time
 import json
 import yaml
 import glob
+import zipfile
 import requests
 import dataclasses
 import subprocess
@@ -11,18 +13,13 @@ import subprocess
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
-from dt_authentication import DuckietownToken
-from duckietown_challenges.rest_methods import EvaluatorFeaturesDict
-
 from .constants import ROSBagStatus, AutobotStatus, logger, AUTOLABS_DIR
-from .job import EvaluationJob
 
 
 class Entity:
 
     def __init__(self):
         self._is_shutdown = False
-        self._heartbeat_period = 1.0
 
     def shutdown(self):
         self._is_shutdown = True
@@ -34,7 +31,6 @@ class Entity:
 
 @dataclasses.dataclass
 class ROSBag(Entity):
-
     robot: str
     name: str
 
@@ -56,12 +52,11 @@ class ROSBag(Entity):
         while not self._is_shutdown:
             if self.status == ROSBagStatus.READY:
                 break
-            time.sleep(self._heartbeat_period)
+            time.sleep(1)
 
 
 @dataclasses.dataclass
 class ROSBagRecorder(Entity):
-
     robot: 'Robot'
     bag: ROSBag = None
 
@@ -88,13 +83,15 @@ class ROSBagRecorder(Entity):
         while not self._is_shutdown:
             if self.status == ROSBagStatus.READY:
                 break
-            time.sleep(self._heartbeat_period)
+            time.sleep(1)
 
 
 @dataclasses.dataclass
 class Robot(Entity, abc.ABC):
     name: str
-    remote_name: str
+    type: str
+    priority: int = 0
+    remote_name: Optional[str] = None
 
     @property
     def hostname(self) -> str:
@@ -107,10 +104,21 @@ class Robot(Entity, abc.ABC):
     def new_bag_recorder(self) -> ROSBagRecorder:
         return ROSBagRecorder(self)
 
+    def is_a(self, cls) -> bool:
+        return isinstance(self, cls)
+
+    def download_robot_config(self, destination: str):
+        os.makedirs(destination)
+        _config_zipped_url = self._api_url('files', 'config?format=zip')
+        zip_binary = requests.get(_config_zipped_url).content
+        zf = zipfile.ZipFile(io.BytesIO(zip_binary), "r")
+        zf.extractall(destination)
+
     def _api_url(self, api: str, resource: str) -> str:
         return f"http://{self.hostname}/{api}/{resource}"
 
 
+@dataclasses.dataclass
 class Autobot(Robot):
 
     @property
@@ -135,24 +143,31 @@ class Autobot(Robot):
         _call_api(url)
 
     def join(self, until: AutobotStatus):
-        while not self._is_shutdown:
+        while True:
             if self.status.matches(until):
                 break
-            time.sleep(self._heartbeat_period)
+            time.sleep(1)
 
 
 class Watchtower(Robot):
 
     def join(self, until: AutobotStatus):
-        while not self._is_shutdown:
-            time.sleep(self._heartbeat_period)
+        return
 
 
 @dataclasses.dataclass
 class Autolab:
     name: str
-    robots: Dict[str, Robot]
     features: Dict[str, Any]
+    robots: Dict[str, Robot]
+
+    def get_robots(self, rtype: Robot.__class__, num: int) -> List[Robot]:
+        bots = [rbot for rbot in self.robots.values() if isinstance(rbot, (rtype,))]
+        bots = sorted(bots, key=lambda r: r.priority, reverse=True)
+        if len(bots) < num:
+            raise ValueError(f'The autolab does not have enought robots of type {rtype.__name__}. '
+                             f'{num} were requested, only {len(bots)} are available.')
+        return bots[:num]
 
     @staticmethod
     def load(name: str):
@@ -172,13 +187,14 @@ class Autolab:
         # parse robots
         robots = {}
         for robot in autolab['robots']:
-            lname, rname = robot['local_name'], robot['remote_name']
+            rname = robot['name']
+            # noinspection PyArgumentList
             robot = {
                 'duckiebot': Autobot,
                 'watchtower': Watchtower
-            }[robot['type']](name=lname, remote_name=rname)
-            robots[lname] = robot
-        return Autolab(name=name, robots=robots, features=autolab['features'])
+            }[robot['type']](**robot)
+            robots[rname] = robot
+        return Autolab(name=name, features=autolab['features'], robots=robots)
 
     @staticmethod
     def _get_all_autolabs() -> List[str]:
@@ -188,18 +204,30 @@ class Autolab:
         autolabs_fpaths = glob.glob(autolabs_star_fpath)
         return [Path(fpath).stem for fpath in autolabs_fpaths]
 
+
+@dataclasses.dataclass
+class Scenario:
+    scenario_name: str
+    robots: Dict[str, dict]
+    duckies: Dict
+    environment: Dict
+    player_robots: List[str]
+    image_file: str
+
+
 def _call_api(url: str) -> dict:
     res = None
     ntrials = 3
     for trial in range(ntrials):
         try:
+            logger.debug(f'[GET]: {url}')
             res = requests.get(url).json()
         except (requests.RequestException, json.JSONDecodeError) as e:
             logger.warning(f'An error occurred while trying to reach the following resource.'
                            f'\n\tResouce: {url}'
-                           f'\n\tTrial:   {trial+1}/{ntrials}'
+                           f'\n\tTrial:   {trial + 1}/{ntrials}'
                            f'\n\tError:   {str(e)}\n')
-            if trial == ntrials-1:
+            if trial == ntrials - 1:
                 logger.error('Trials exhausted. Raising exception.')
                 raise e
     if res is None:
@@ -212,15 +240,3 @@ def _call_api(url: str) -> dict:
                      f'\n\tError:   {res["data"]}\n')
     # ---
     return res['data']
-
-
-@dataclasses.dataclass
-class EvaluatorStatus:
-    token: str
-    autolab: Autolab
-    job: Optional[EvaluationJob]
-    machine_id: str
-    process_id: str
-    features: EvaluatorFeaturesDict
-    operator: DuckietownToken
-

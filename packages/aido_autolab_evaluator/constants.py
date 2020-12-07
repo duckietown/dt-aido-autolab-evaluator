@@ -7,6 +7,7 @@ from enum import IntEnum
 
 logging.basicConfig()
 logger = logging.getLogger('aido-autolab-evaluator')
+logger.setLevel(logging.INFO)
 if 'DEBUG' in os.environ and os.environ['DEBUG'].lower() in ['true', 'yes', '1']:
     logger.setLevel(logging.DEBUG)
 

@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 
+import os
 import argparse
+
 from typing import List, Dict, Any
 
-from aido_autolab_evaluator.interfaces import AIDOAutolabEvaluatorCLIInterface
+from aido_autolab_evaluator.interfaces import AIDOAutolabEvaluatorPlainInterface
+
 from .constants import Storage
 from .entities import Autolab
 from .evaluator import AIDOAutolabEvaluator
@@ -34,6 +37,8 @@ if __name__ == '__main__':
                         help='Name of the Autolab to use')
     parser.add_argument('-f', '--feature', action='append', nargs=1, dest='features', default=[],
                         help='Features available to this Autolab')
+    parser.add_argument('--stage', action='store_true', default=False,
+                        help='Use staging server instead of the official one')
     # parse args
     parsed = parser.parse_args()
     features = _parse_features(parsed.features)
@@ -45,10 +50,13 @@ if __name__ == '__main__':
         autolab = Autolab.load(parsed.autolab)
     except FileNotFoundError:
         exit(1)
+    # setup staging
+    if parsed.stage:
+        os.environ['DTSERVER'] = 'https://challenges-stage.duckietown.org'
     # create an evaluator
     evaluator = AIDOAutolabEvaluator(parsed.token, autolab)
     # attach an interface
-    iface = AIDOAutolabEvaluatorCLIInterface(evaluator)
+    iface = AIDOAutolabEvaluatorPlainInterface(evaluator)
     iface.start()
 
 
