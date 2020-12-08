@@ -1,12 +1,18 @@
+import dataclasses
+import os
+import sys
 import time
+from threading import Thread
 from types import SimpleNamespace
+from typing import List, Optional
 
 import docker
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
+import yaml
 
 from aido_autolab_evaluator.entities import LocalizationExperimentStatus
-from aido_autolab_evaluator.utils import StoppableThread
+from aido_autolab_evaluator.utils import StoppableThread, StoppableResource
 from dt_class_utils import DTProcess
 from duckietown_challenges.challenges_constants import ChallengesConstants
 
@@ -15,7 +21,7 @@ from aido_autolab_evaluator.evaluator import AIDOAutolabEvaluator
 from aido_autolab_evaluator.constants import logger
 
 
-MAX_EXPERIMENT_DURATION = 5
+MAX_EXPERIMENT_DURATION = 12
 LOCALIZATION_PRECISION_MS = 200
 
 
@@ -86,10 +92,10 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
             logger.info('Cleaning containers...')
             evaluator.clean_containers()
             logger.info('Containers environment now clean!')
-            # reset robots
-            logger.info('Resetting robots...')
-            evaluator.reset_robots()
-            logger.info('Robots correctly reset!')
+            # disengage robots
+            logger.info('Disengaging robots...')
+            evaluator.disengage_robots()
+            logger.info('Robots correctly disengaged!')
             # load code
             logger.info('Launching FIFOs...')
             evaluator.launch_fifos_bridge()
@@ -106,6 +112,10 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
                      color='white')
             plt.subplots_adjust(left=0, bottom=0, right=0.99, top=0.99)
             plt.show()
+            # disengage robots (again)
+            logger.info('Prepping robots...')
+            evaluator.disengage_robots()
+            logger.info('Robots are ready to go!')
             # load code
             logger.info('Launching solution...')
             evaluator.launch_solution()
@@ -119,6 +129,9 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
             logger.info('Waiting for the solution to get healty (e.g., start publishing commands)')
             evaluator.wait_for_solution_commands()
             logger.info('The robots are ready to drive!')
+            # start recording bags
+            logger.info('Starting data recording on the robots...')
+            evaluator.start_robots_logging()
             # start localization experiment
             logger.info('Starting localization experiment...')
             experiment.start()
@@ -130,7 +143,7 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
             # monitor the solution
             stime = time.time()
             while True:
-                logger.info('Monitoring container...')
+                logger.info(f'Monitoring container ({int(time.time() - stime)} secs)...')
                 try:
                     job.solution_container.reload()
                 except docker.errors.NotFound:
@@ -146,9 +159,10 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
                     logger.info(f'Submission transitioned to state `{str(job.status)}`')
                     break
                 time.sleep(2)
+            # disengage robots
             logger.info('Disengaging robots...')
             job.mark_stop()
-            evaluator.disengage_robots()
+            evaluator.disengage_robots(join=False)
             logger.info('Robots should be stopped!')
             # stop localization experiment
             logger.info('Stopping localization experiment...')
@@ -161,6 +175,12 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
             if job.solution_container_monitor.exit_code is None:
                 logger.error('Could not fetch exit code for "solution" container. '
                              'Reporting FAILED.')
+            # collect logs from container
+            logs = job.solution_container_monitor.logs
+            if logs is None:
+                logs = "Unknown error"
+            # remove containers
+            evaluator.clean_containers(remove=True)
             # wait for localization experiment to post-process
             logger.info('Post-processing localization experiment...')
             # TODO: we need to handle the ERROR state
@@ -168,6 +188,20 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
             logger.info('Localization experiment completed!')
             # fetch localization results
             trajectories = experiment.results()
+            trajectories = {
+                k.split('/')[0]: v for k, v in trajectories.items()
+            }
+            for robot_name, robot_trajectory in trajectories.items():
+                if robot_name not in autolab.robots:
+                    logger.warning('The localization report contained the trajectory of a '
+                                   'robot outside this Autolab. Ignoring it.')
+                    continue
+                robot = autolab.robots[robot_name]
+                robot_fpath = job.storage_dir(f'output/robots/{robot.remote_name}')
+                traj_fpath = os.path.join(robot_fpath, 'trajectory.yaml')
+                logger.debug(f'Writing trajectory for robot `{robot_name}` to `{traj_fpath}`.')
+                with open(traj_fpath, 'wt') as fout:
+                    yaml.safe_dump(robot_trajectory, fout)
             # ask the operator how it did go
             exit_code = job.solution_container_monitor.exit_code
             good_exit_codes = [0, 137]
@@ -175,12 +209,15 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
             print('-' * 100)
             duration = int(job.end_time - job.start_time)
             traj_str = '\n\t\t'.join([f"- {k.split('/')[0]}: {len(v)} points"
-                                      for k, v in trajectories.items()])
+                                      for k, v in trajectories.items()]) \
+                       if len(trajectories) else '(none)'
+            solution_code_status = 'Worked' if exit_code in good_exit_codes else 'Failed'
             logger.info('Experiment completed:\n'
                         'Facts:\n'
                         f'\tDuration: {duration} secs\n'
                         f'\tTrajectories:\n'
-                        f'\t\t{traj_str}\n')
+                        f'\t\t{traj_str}\n'
+                        f'\tSolution code: {solution_code_status}')
             # TODO
             # render_trajectories()
             print('-' * 100)
@@ -194,51 +231,119 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
             #
             # exit(0)
 
+            # if the operator terminated the evaluator, do not enter the interactive part
+            if self.is_shutdown():
+                return
+
+            # wait for stdout/stderr to flush
+            sys.stdout.flush()
+            sys.stderr.flush()
+            time.sleep(1)
+            # ---
+
             # start interaction with the operator
-            interaction = SimpleNamespace(
-                options=['s', 'f'],
-                answer=None,
-                message=None
+            interaction = Interaction(
+                question="How did it go? [s] Success, [f] Failure: ",
+                options=['s', 'f']
             )
-
-            def interact():
-                # ask how it did go
-                while interaction.answer not in interaction.options:
-                    res = input("How did it go? [s] Success, [f] Failed: ")
-                    res = res.lower().strip()
-                    if res in interaction.options:
-                        interaction.answer = res
-                        break
-                # ask for comments to send to the server
-                res = input("Do you have a message for the server?: ")
-                interaction.message = res.strip()
-
-            interactor = StoppableThread(target=interact, one_shot=True)
-            interactor.start()
+            interaction.start()
             # wait for the operator
             while not self.is_shutdown():
                 if interaction.answer is not None:
                     break
                 time.sleep(0.2)
+            interaction.shutdown()
+            decision = interaction.answer
+            # ---
+
+            # start (another) interaction with the operator
+            interaction = Interaction(
+                question="Do you have a message for the server?: "
+            )
+            interaction.start()
+            # wait for the operator
+            while not self.is_shutdown():
+                if interaction.answer is not None:
+                    break
+                time.sleep(0.2)
+            interaction.shutdown()
+            message = interaction.answer
+            # ---
+
+
+
+            # # start interaction with the operator
+            # interaction = SimpleNamespace(
+            #     options=['s', 'f'],
+            #     answer=None,
+            #     message=None
+            # )
+            #
+            # def interact():
+            #     # ask how it did go
+            #     while interaction.answer not in interaction.options:
+            #         res = input("How did it go? [s] Success, [f] Failure: ")
+            #         res = res.lower().strip()
+            #         if res in interaction.options:
+            #             interaction.answer = res
+            #             break
+            #     # ask for comments to send to the server
+            #     res = input("Do you have a message for the server?: ")
+            #     interaction.message = res.strip()
+            #
+            # interactor = StoppableThread(target=interact, one_shot=True)
+            # interactor.start()
+            # # wait for the operator
+            # while not self.is_shutdown():
+            #     if interaction.answer is not None:
+            #         break
+            #     time.sleep(0.2)
 
             # parse interaction result
-            if interaction.answer == 'f':
+            if decision == 'f':
                 # report FAILED status
-                logs = job.solution_container_monitor.logs
-                if logs is None:
-                    logs = "Unknown error"
-                # add operator message
-                logs = f"Operator message: '{interaction.message}'\n" \
+                logs = f"Operator message: '{message}'\n" \
                        f"Logs:\n{logs}"
                 logger.info('Reporting FAILURE to the server.')
                 job.report(ChallengesConstants.STATUS_JOB_FAILED, logs)
-                continue
+            elif decision == 's':
+                # upload files
+                logger.info('Uploading results...')
+                evaluator.upload_results()
+                logger.info('Results uploaded!')
+                # report SUCCESS
+                logger.info('Reporting SUCCESS to the server.')
+                job.report(ChallengesConstants.STATUS_JOB_SUCCESS)
 
-            # upload files
+            # reset evaluator
+            evaluator.reset()
+            if self.is_shutdown():
+                return
 
-            # report SUCCESS
-            logger.info('Reporting SUCCESS to the server.')
-            job.report(ChallengesConstants.STATUS_JOB_SUCCESS)
+
+class Interaction(Thread, StoppableResource):
+
+    def __init__(self, question: str, options: Optional[List[str]] = None):
+        StoppableResource.__init__(self)
+        Thread.__init__(self)
+        self.question = question
+        self.options = options
+        self.answer = None
+
+    def run(self):
+        # ask question
+        while not self.is_shutdown and self.answer is None:
+            res = input(self.question).strip()
+            if self.options is None:
+                self.answer = res
+                break
+            else:
+                if res in self.options:
+                    self.answer = res
+                    break
+
+
+
 
 
 # def render_trajectories():

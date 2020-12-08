@@ -24,16 +24,17 @@ class StatsDict(TypedDict):
 
 class EvaluationJob(StoppableResource):
 
-    def __init__(self, evaluator, job_id: int, aws_config: dict = None, **info):
+    def __init__(self, evaluator, job_id: int, step_name: str, aws_config: dict = None, **info):
         super().__init__()
         # store parameters
         self._evaluator = evaluator
         self._job_id: int = job_id
+        self._step_name: str = step_name
         self._aws_config: Optional[AWSConfig] = aws_config
         self._scenario_image = info['challenge_parameters']['services']['evaluator']['image']
         self._solution_image = '{registry}/{organization}/{repository}:{tag}@{digest}'.format(
             **info['parameters']['locations'][0])
-        self._storage_path: str = Storage.dir(f'jobs/{self._job_id}')
+        self._storage_path: str = Storage.dir(f'jobs/{self._job_id}/{self._step_name}')
         self._results_dir = os.path.join(self._storage_path, 'output')
         if os.path.isdir(self._storage_path):
             logger.warning(f'Directory `{self._storage_path}` already exists. '
@@ -51,6 +52,7 @@ class EvaluationJob(StoppableResource):
         # ---
         self.info = {
             'job_id': job_id,
+            'step_name': step_name,
             'aws_config': aws_config,
             **info
         }
@@ -124,19 +126,25 @@ class EvaluationJob(StoppableResource):
         self._end_time = time.time()
 
     def storage_dir(self, key: str):
-        return os.path.join(self._storage_path, key)
+        spath = os.path.join(self._storage_path, key)
+        os.makedirs(spath, exist_ok=True)
+        return spath
 
     def get_scenario(self):
-        scenario_fpath = os.path.join(self.storage_dir('scenario'), 'scenario.yaml')
+        scenario_fpath = os.path.join(self.storage_dir('output/scenario'), 'scenario.yaml')
         if not os.path.isfile(scenario_fpath):
             raise ValueError(f'Scenario file `{scenario_fpath}` not found. Did you download it?')
         with open(scenario_fpath, 'rt') as fin:
             return Scenario(
-                image_file=os.path.join(self.storage_dir('scenario'), 'top_down.png'),
+                image_file=os.path.join(self.storage_dir('output/scenario'), 'top_down.png'),
                 **yaml.safe_load(fin)
             )
 
     def upload_artefacts(self) -> List[ArtefactDict]:
+        # add time info
+        time_info = {'start': self._start_time, 'end': self._start_time}
+        with open(os.path.join(self._results_dir, 'time.yaml'), 'wt') as fout:
+            yaml.safe_dump(time_info, fout)
         # upload_files
         logger.info(f"[Job:{self._job_id}] - Uploading artefacts to AWS S3...")
         to_upload = get_files_to_upload(self._results_dir)
@@ -149,6 +157,8 @@ class EvaluationJob(StoppableResource):
         return self._uploaded_files
 
     def abort(self, msg: str):
+        if self.done:
+            return
         logger.info(f'[Job:{self.id}] Received `abort` request.')
         # stopping monitors
         if self._solution_container_monitor is not None:
@@ -164,8 +174,6 @@ class EvaluationJob(StoppableResource):
         stats = StatsDict(msg=msg or "", scores={})
         ntrials = 5
         report_res = None
-        self._status = status
-        self._done = True
         for trial in range(ntrials):
             # noinspection PyBroadException
             try:
@@ -215,5 +223,8 @@ class EvaluationJob(StoppableResource):
                 # sleep for a while
                 logger.warning('Retrying in 5 seconds...')
                 time.sleep(5)
+        # mark as done
+        self._status = status
+        self._done = True
         # ---
         return report_res

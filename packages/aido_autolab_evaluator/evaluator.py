@@ -17,7 +17,7 @@ from duckietown_challenges_runner.runner import get_features
 from dt_authentication import DuckietownToken
 from .constants import logger, AutobotStatus
 from .job import EvaluationJob
-from .entities import Autolab, Autobot
+from .entities import Autolab, Autobot, Watchtower
 from .utils import StoppableThread, StoppableResource, pretty_print
 
 chlogger.setLevel(logging.DEBUG)
@@ -124,7 +124,7 @@ class AIDOAutolabEvaluator(StoppableResource):
 
     def download_scenario(self):
         client = docker.from_env()
-        scenario_dir = self._job.storage_dir("scenario")
+        scenario_dir = self._job.storage_dir("output/scenario")
         client.containers.run(
             image=self._job.scenario_image,
             remove=True,
@@ -146,6 +146,8 @@ class AIDOAutolabEvaluator(StoppableResource):
             autobot.download_robot_config(dest_dir)
 
     def clean_containers(self, remove: bool = True):
+        if self._job is None:
+            return
         client = docker.from_env()
         scenario = self._job.get_scenario()
         for robot in self._autolab.get_robots(Autobot, len(scenario.robots)):
@@ -196,18 +198,19 @@ class AIDOAutolabEvaluator(StoppableResource):
                             break
                         time.sleep(2)
 
-    def reset_robots(self):
+    def disengage_robots(self, join: bool = True):
         scenario = self._job.get_scenario()
         for robot in self._autolab.get_robots(Autobot, len(scenario.robots)):
             autobot = cast(Autobot, robot)
             # put the robot in estop mode
             logger.debug(f'Engaging ESTOP on `{autobot.name}`')
-            thread = StoppableThread(target=autobot.stop)
+            thread = StoppableThread(target=autobot.stop, one_shot=not join)
             thread.start()
             # wait for the estop to engage
-            autobot.join(until=AutobotStatus(estop=True, moving=False))
-            thread.shutdown()
-            logger.debug(f'Robot `{autobot.name}` reports for duty')
+            if join:
+                autobot.join(until=AutobotStatus(estop=True, moving=False))
+                thread.shutdown()
+                logger.debug(f'Robot `{autobot.name}` reports for duty')
 
     def launch_fifos_bridge(self):
         client = docker.from_env()
@@ -246,6 +249,11 @@ class AIDOAutolabEvaluator(StoppableResource):
                          f'{pretty_print(container_cfg)}')
             container = client.containers.run(**container_cfg)
             self._job.fifos_container = container
+
+    def start_robots_logging(self):
+        scenario = self._job.get_scenario()
+        for robot in self._autolab.get_robots([Autobot, Watchtower]):
+            robot.new_bag_recorder()
 
     def launch_solution(self):
         client = docker.from_env()
@@ -321,14 +329,19 @@ class AIDOAutolabEvaluator(StoppableResource):
             thread = Thread(target=autobot.go)
             thread.start()
 
-    def disengage_robots(self):
-        scenario = self._job.get_scenario()
-        for robot in self._autolab.get_robots(Autobot, len(scenario.robots)):
-            autobot = cast(Autobot, robot)
-            # lift the robot's estop
-            logger.debug(f'Sending ESTOP to `{autobot.name}`')
-            thread = Thread(target=autobot.stop)
-            thread.start()
+    def upload_results(self):
+        self._job.upload_artefacts()
+
+    def reset(self):
+        if self._job is not None:
+            logger.info(f'Clearing Job #{self._job.id}')
+            self._job.shutdown()
+        self._job = None
+        for _ in range(5):
+            print('.\n')
+            time.sleep(0.2)
+        print('.' * 100)
+        time.sleep(4)
 
 
 class ContainerMonitor(StoppableThread):

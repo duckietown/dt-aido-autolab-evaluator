@@ -13,7 +13,7 @@ import dataclasses
 import subprocess
 
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union, Iterable
 
 from .constants import ROSBagStatus, AutobotStatus, logger, AUTOLABS_DIR, \
     AUTOLAB_LOCALIZATION_SERVER_HOSTNAME, AUTOLAB_LOCALIZATION_SERVER_PORT
@@ -111,11 +111,15 @@ class Robot(Entity, abc.ABC):
         return isinstance(self, cls)
 
     def download_robot_config(self, destination: str):
-        os.makedirs(destination)
+        os.makedirs(destination, exist_ok=True)
         _config_zipped_url = self._api_url('files', 'config?format=zip')
         zip_binary = requests.get(_config_zipped_url).content
         zf = zipfile.ZipFile(io.BytesIO(zip_binary), "r")
         zf.extractall(destination)
+
+    @abc.abstractmethod
+    def get_topics(self) -> List[str]:
+        pass
 
     def _api_url(self, api: str, resource: str) -> str:
         return f"http://{self.hostname}/{api}/{resource}"
@@ -151,11 +155,19 @@ class Autobot(Robot):
                 break
             time.sleep(1)
 
+    def get_topics(self) -> List[str]:
+        # TODO
+        pass
+
 
 class Watchtower(Robot):
 
     def join(self, until: AutobotStatus):
         return
+
+    def get_topics(self) -> List[str]:
+        # TODO
+        pass
 
 
 @dataclasses.dataclass
@@ -164,16 +176,23 @@ class Autolab:
     features: Dict[str, Any]
     robots: Dict[str, Robot]
 
-    def get_robots(self, rtype: Robot.__class__, num: int) -> List[Robot]:
-        bots = [rbot for rbot in self.robots.values() if isinstance(rbot, (rtype,))]
+    def get_robots(self, rtype: Union[Robot.__class__, List[Robot.__class__]],
+                   num: Optional[int] = None) -> List[Robot]:
+        if not isinstance(rtype, Iterable):
+            rtype = (rtype,)
+        bots = [rbot for rbot in self.robots.values() if isinstance(rbot, rtype)]
         bots = sorted(bots, key=lambda r: r.priority, reverse=True)
-        if len(bots) < num:
-            raise ValueError(f'The autolab does not have enought robots of type {rtype.__name__}. '
-                             f'{num} were requested, only {len(bots)} are available.')
-        return bots[:num]
+        if num is not None:
+            if len(bots) < num:
+                rtypes = list(map(lambda rt: rt.__name__, rtype))
+                raise ValueError(f'The autolab does not have enought robots of type {rtypes}. '
+                                 f'{num} were requested, only {len(bots)} are available.')
+            return bots[:num]
+        return bots
 
     def new_localization_experiment(self, duration: int, precision_ms: int):
-        # TODO: `hsotname` should not be a constant, it should be just the name of the autolab, thus running on the town robot
+        # TODO: `hostname` should not be a constant, it should be just the name of the autolab,
+        #  thus running on the town robot
         hostname = AUTOLAB_LOCALIZATION_SERVER_HOSTNAME
         port = AUTOLAB_LOCALIZATION_SERVER_PORT
         experiments_api_url = f'{hostname}:{port}/experiment'
