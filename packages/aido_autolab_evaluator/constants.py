@@ -15,6 +15,10 @@ if 'DEBUG' in os.environ and os.environ['DEBUG'].lower() in ['true', 'yes', '1']
 DATA_DIR = os.environ.get('AIDO_DATA_DIR', '/data/logs/aido')
 AUTOLABS_DIR = os.environ.get('AUTOLABS_DIR', '/autolabs')
 
+# TODO: `localhost` is hardcoded for now, it should be the town name
+AUTOLAB_LOCALIZATION_SERVER_HOSTNAME = 'localhost'
+AUTOLAB_LOCALIZATION_SERVER_PORT = 9091
+
 
 class Storage:
 

@@ -18,7 +18,7 @@ from dt_authentication import DuckietownToken
 from .constants import logger, AutobotStatus
 from .job import EvaluationJob
 from .entities import Autolab, Autobot
-from .utils import StoppableThread, StoppableResource
+from .utils import StoppableThread, StoppableResource, pretty_print
 
 chlogger.setLevel(logging.DEBUG)
 
@@ -145,42 +145,56 @@ class AIDOAutolabEvaluator(StoppableResource):
             dest_dir = self._job.storage_dir(f'output/robots/{autobot.remote_name}')
             autobot.download_robot_config(dest_dir)
 
-    def clean_containers(self):
+    def clean_containers(self, remove: bool = True):
         client = docker.from_env()
         scenario = self._job.get_scenario()
         for robot in self._autolab.get_robots(Autobot, len(scenario.robots)):
             autobot = cast(Autobot, robot)
-            logger.debug(f'Removing old containers for `{autobot.name}`')
+            logger.debug(f'Removing containers for `{autobot.name}`')
             for container_name in [f"aido-solution-{autobot.name}", f"aido-fifos-{autobot.name}"]:
                 # stop then remove container (if present)
                 container = None
                 try:
                     container = client.containers.get(container_name)
-                    logger.debug(f'An old instance of the container `{container_name}` was found.')
+                    logger.debug(f'An instance of the container `{container_name}` was found.')
                 except docker.errors.NotFound:
-                    logger.debug(f'We did not find any old instances of `{container_name}`.')
+                    logger.debug(f'We did not find any instances of `{container_name}`.')
                 # skip if the container does not exist
                 if container is None:
                     return
-                # kill if it is running
-                if container.status == 'running':
-                    logger.debug(f'An old instance of `{container_name}` was running, killing it.')
-                    try:
-                        container.kill()
-                        container.wait()
-                    except docker.errors.NotFound:
-                        pass
-                # wait until the user removes it
-                while True:
-                    try:
-                        container = client.containers.get(container_name)
-                        logger.debug(f'Waiting for an old instance of `{container_name}` '
-                                     'to be removed.')
-                        if container.status in ['died', 'killed', 'exited']:
-                            container.remove()
-                    except docker.errors.NotFound:
-                        break
-                    time.sleep(2)
+                # stop/kill if it is running
+                for action_name in ['stop', 'kill']:
+                    container.reload()
+                    if container.status == 'running':
+                        logger.debug(f'An instance of `{container_name}` was running, '
+                                     f'stopping it.')
+                        try:
+                            logger.debug(f'Container `{container_name}.{action_name}()`')
+                            action = getattr(container, action_name)
+                            action()
+                            if action_name == 'stop':
+                                logger.info(f'Waiting for container `{container_name}` to stop.')
+                                # give it time to stop
+                                time.sleep(10)
+                            if action_name == 'kill':
+                                logger.info(f'Container `{container_name}` did not stop. '
+                                            f'Killing it.')
+                                container.wait()
+                        except docker.errors.NotFound:
+                            pass
+                # remove it and wait until it is gone (if necessary)
+                if remove:
+                    while True:
+                        try:
+                            container = client.containers.get(container_name)
+                            logger.debug(f'Waiting for an instance of `{container_name}` '
+                                         'to be removed.')
+                            if container.status in ['died', 'killed', 'exited']:
+                                container.remove()
+                        except docker.errors.NotFound:
+                            logger.debug(f'Container `{container_name}` was removed.')
+                            break
+                        time.sleep(2)
 
     def reset_robots(self):
         scenario = self._job.get_scenario()
@@ -203,14 +217,15 @@ class AIDOAutolabEvaluator(StoppableResource):
             container_name = f"aido-fifos-{autobot.name}"
             image_name = "duckietown/dt-duckiebot-fifos-bridge:daffy-amd64"
             # run new container
-            logger.debug(f'Running FIFOs container `{image_name}` for `{autobot.name}`.')
+            logger.debug(f'Running "FIFOs" container for `{autobot.name}`.')
             container_cfg = {
                 'name': container_name,
                 'image': image_name,
                 'environment': {
                     'VEHICLE_NAME': robot.name,
                     'ROBOT_TYPE': robot.type,
-                    'ROS_MASTER_URI': f'http://{robot.name}.local:11311'
+                    'AIDONODE_DATA_IN': f'/fifos/{robot.remote_name}-in',
+                    'AIDONODE_DATA_OUT': f'/fifos/{robot.remote_name}-out'
                 },
                 'network_mode': 'host',
                 'volumes': {
@@ -227,6 +242,8 @@ class AIDOAutolabEvaluator(StoppableResource):
                 'remove': False,
                 'detach': True
             }
+            logger.debug(f'Running "FIFOs" container `{container_name}` with configuration:\n'
+                         f'{pretty_print(container_cfg)}')
             container = client.containers.run(**container_cfg)
             self._job.fifos_container = container
 
@@ -237,15 +254,15 @@ class AIDOAutolabEvaluator(StoppableResource):
             autobot = cast(Autobot, robot)
             container_name = f"aido-solution-{autobot.name}"
             # run new container
-            logger.debug(f'Running solution container `{self._job.solution_image}` '
-                         f'controlling `{autobot.name}`')
+            logger.debug(f'Running "solution" container controlling `{autobot.name}`')
             container_cfg = {
                 'name': container_name,
                 'image': self._job.solution_image,
                 'environment': {
                     'VEHICLE_NAME': robot.name,
                     'ROBOT_TYPE': robot.type,
-                    'ROS_MASTER_URI': f'http://{robot.name}.local:11311'
+                    'AIDONODE_DATA_IN': f'/fifos/{robot.remote_name}-in',
+                    'AIDONODE_DATA_OUT': f'fifo:/fifos/{robot.remote_name}-out'
                 },
                 'network_mode': 'host',
                 'volumes': {
@@ -262,6 +279,8 @@ class AIDOAutolabEvaluator(StoppableResource):
                 'remove': False,
                 'detach': True
             }
+            logger.debug(f'Running "solution" container `{container_name}` with configuration:\n'
+                         f'{pretty_print(container_cfg)}')
             container = client.containers.run(**container_cfg)
             # spin a container monitor
             monitor = ContainerMonitor(self, container)
@@ -322,18 +341,36 @@ class ContainerMonitor(StoppableThread):
         )
         self._evaluator = evaluator
         self._container = container
+        self._exit_code = None
+        self._logs = None
+
+    @property
+    def exit_code(self):
+        return self._exit_code
+
+    @property
+    def logs(self):
+        return self._logs
 
     def _check(self):
+        if self._evaluator.is_shutdown:
+            self.shutdown()
         try:
             res = self._container.wait()
-            status_code = res['StatusCode']
+            exit_code = res['StatusCode']
         except docker.errors.NotFound:
-            status_code = -1
-        if status_code != 0:
-            logs = "(no logs)"
-            # the container died
-            logs = self._container.logs()
-            self._evaluator.job.report(ChallengesConstants.STATUS_JOB_FAILED, logs)
+            exit_code = -1
+        if exit_code != 0:
+            logger.info(f'[Monitor]: Container `{self._container.name}` exited '
+                        f'with status `{exit_code}`.')
+        # fetch logs
+        try:
+            self._logs = self._container.logs().decode('utf-8')
+        except docker.errors.NotFound:
+            self._logs = "(no logs)"
+        # ---
+        self._exit_code = exit_code
+        self.shutdown()
 
 
 class AIDOAutolabEvaluatorHeartBeat(Thread):

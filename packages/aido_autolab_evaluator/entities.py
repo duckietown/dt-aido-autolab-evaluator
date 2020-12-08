@@ -15,7 +15,8 @@ import subprocess
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
-from .constants import ROSBagStatus, AutobotStatus, logger, AUTOLABS_DIR
+from .constants import ROSBagStatus, AutobotStatus, logger, AUTOLABS_DIR, \
+    AUTOLAB_LOCALIZATION_SERVER_HOSTNAME, AUTOLAB_LOCALIZATION_SERVER_PORT
 
 
 class Entity:
@@ -172,8 +173,11 @@ class Autolab:
         return bots[:num]
 
     def new_localization_experiment(self, duration: int, precision_ms: int):
-        # TODO: `localhost` is hardcoded for now, it should be the town name
-        return LocalizationExperiment('localhost', duration, precision_ms)
+        # TODO: `hsotname` should not be a constant, it should be just the name of the autolab, thus running on the town robot
+        hostname = AUTOLAB_LOCALIZATION_SERVER_HOSTNAME
+        port = AUTOLAB_LOCALIZATION_SERVER_PORT
+        experiments_api_url = f'{hostname}:{port}/experiment'
+        return LocalizationExperiment(experiments_api_url, duration, precision_ms)
 
     @staticmethod
     def load(name: str):
@@ -219,6 +223,17 @@ class LocalizationExperimentStatus(IntEnum):
     FINISHED = 8
     ERROR = 9
 
+    @staticmethod
+    def from_string(s: str) -> 'LocalizationExperimentStatus':
+        return {
+            'CREATED': LocalizationExperimentStatus(0),
+            'RUNNING': LocalizationExperimentStatus(1),
+            'STOPPED': LocalizationExperimentStatus(2),
+            'POSTPROCESSING': LocalizationExperimentStatus(3),
+            'FINISHED': LocalizationExperimentStatus(8),
+            'ERROR': LocalizationExperimentStatus(9),
+        }[s]
+
 
 class LocalizationExperiment:
 
@@ -235,9 +250,9 @@ class LocalizationExperiment:
     def stop(self):
         _call_api(self._get_url('stop', self._id))
 
-    def status(self):
+    def status(self) -> LocalizationExperimentStatus:
         res = _call_api(self._get_url('status', self._id))
-        return LocalizationExperimentStatus(res)
+        return LocalizationExperimentStatus.from_string(res['status'])
 
     def results(self):
         res = _call_api(self._get_url('results', self._id))
@@ -250,9 +265,11 @@ class LocalizationExperiment:
             time.sleep(1)
 
     def _get_url(self, action: str, *args, **kwargs):
-        args = '/'.join(*args)
-        qs = '&'.join([f'{k}={v}' for k, v in kwargs])
-        return f"http://{self._api_hostname}/{action}/{args}?{qs}"
+        args = '/'.join([''] + list(args))
+        qs = '&'.join([f'{k}={v}' for k, v in kwargs.items()])
+        if len(qs):
+            qs = f'?{qs}'
+        return f"http://{self._api_hostname}/{action}{args}{qs}"
 
 
 
@@ -273,6 +290,7 @@ def _call_api(url: str) -> dict:
         try:
             logger.debug(f'[GET]: {url}')
             res = requests.get(url).json()
+            break
         except (requests.RequestException, json.JSONDecodeError) as e:
             logger.warning(f'An error occurred while trying to reach the following resource.'
                            f'\n\tResouce: {url}'

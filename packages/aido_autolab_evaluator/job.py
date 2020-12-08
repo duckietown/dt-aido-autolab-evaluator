@@ -46,6 +46,8 @@ class EvaluationJob(StoppableResource):
         self._solution_container = None
         self._fifos_container = None
         self._solution_container_monitor = None
+        self._start_time = None
+        self._end_time = None
         # ---
         self.info = {
             'job_id': job_id,
@@ -74,6 +76,14 @@ class EvaluationJob(StoppableResource):
     @property
     def done(self) -> bool:
         return self._done
+
+    @property
+    def start_time(self) -> float:
+        return self._start_time
+
+    @property
+    def end_time(self) -> float:
+        return self._end_time
 
     @property
     def scenario_image(self) -> str:
@@ -107,6 +117,12 @@ class EvaluationJob(StoppableResource):
     def solution_container_monitor(self, val):
         self._solution_container_monitor = val
 
+    def mark_start(self):
+        self._start_time = time.time()
+
+    def mark_stop(self):
+        self._end_time = time.time()
+
     def storage_dir(self, key: str):
         return os.path.join(self._storage_path, key)
 
@@ -129,39 +145,27 @@ class EvaluationJob(StoppableResource):
         # try connecting to S3
         try_s3(aws_config=self._aws_config)
         # upload artefacts
-        self._uploaded_files = upload_files(self._results_dir, aws_config=self.aws_config)
+        self._uploaded_files = upload_files(self._results_dir, aws_config=self._aws_config)
         return self._uploaded_files
 
     def abort(self, msg: str):
+        logger.info(f'[Job:{self.id}] Received `abort` request.')
+        # stopping monitors
+        if self._solution_container_monitor is not None:
+            logger.debug(f'[Job:{self.id}] Stopping solution container monitor.')
+            self._solution_container_monitor.shutdown()
+        # report failure
         self.report(ChallengesConstants.STATUS_JOB_ABORTED, msg)
 
     def report(self, status: JobStatusString, msg: str = None):
+        if self.done:
+            return
         logger.info(f'[Job:{self.id}] Reporting status `{str(status)}` to server.')
         stats = StatsDict(msg=msg or "", scores={})
         ntrials = 5
         report_res = None
         self._status = status
         self._done = True
-
-        # TODO: remove
-        __a = {
-            'token': self._evaluator.token,
-            'job_id': self.id,
-            'stats': stats,
-            'result': status,
-            'ipfs_hashes': {},
-            'machine_id': self._evaluator.machine_id,
-            'process_id': self._evaluator.process_id,
-            'evaluator_version': self._evaluator.version,
-            'uploaded': self._uploaded_files,
-            'impersonate': self._evaluator.who,
-            'timeout': ChallengesConstants.DEFAULT_TIMEOUT
-        }
-        print(__a)
-        print(json.dumps(__a, indent=4, sort_keys=True))
-        # TODO: remove
-
-
         for trial in range(ntrials):
             # noinspection PyBroadException
             try:
@@ -179,6 +183,26 @@ class EvaluationJob(StoppableResource):
                     timeout=ChallengesConstants.DEFAULT_TIMEOUT
                 )
                 break
+            except TypeError:
+                traceback.print_exc()
+                print('I was trying to call `report_res` with these parameters:')
+                # TODO: remove
+                __a = {
+                    'token': self._evaluator.token,
+                    'job_id': self.id,
+                    'stats': stats,
+                    'result': status,
+                    'ipfs_hashes': {},
+                    'machine_id': self._evaluator.machine_id,
+                    'process_id': self._evaluator.process_id,
+                    'evaluator_version': self._evaluator.version,
+                    'uploaded': self._uploaded_files,
+                    'impersonate': self._evaluator.who,
+                    'timeout': ChallengesConstants.DEFAULT_TIMEOUT
+                }
+                print(__a)
+                print(json.dumps(__a, indent=4, sort_keys=True))
+                # TODO: remove
             except BaseException as e:
                 logger.warning(f'An error occurred while trying to report the status of a job.'
                                f'\n\tJob:     {self.id}'

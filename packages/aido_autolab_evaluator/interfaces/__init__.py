@@ -1,2 +1,2 @@
-from .cli import AIDOAutolabEvaluatorCLIInterface
+# from .cli import AIDOAutolabEvaluatorCLIInterface
 from .plain import AIDOAutolabEvaluatorPlainInterface

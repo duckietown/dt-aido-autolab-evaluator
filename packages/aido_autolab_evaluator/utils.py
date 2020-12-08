@@ -1,3 +1,4 @@
+import json
 import time
 import traceback
 from threading import Thread
@@ -32,6 +33,10 @@ class StoppableResource:
         self._is_shutdown = False
         self._shutdown_cbs = []
 
+    @property
+    def is_shutdown(self):
+        return self._is_shutdown
+
     def shutdown(self):
         if self._is_shutdown:
             return
@@ -48,3 +53,9 @@ class StoppableResource:
             self._shutdown_cbs.append((cb, args, kwargs))
 
 
+def pretty_print(data: dict, space: int = 0, indent: int = 4, sort_keys: bool = True):
+    spc = '\t' * space
+    sep = f'{spc}\n'
+    txt = json.dumps(data, indent=indent, sort_keys=sort_keys)
+    txt = spc + sep.join(txt.split('\n'))
+    return txt
