@@ -5,8 +5,58 @@ import dataclasses
 from enum import IntEnum
 
 
-logging.basicConfig()
-logger = logging.getLogger('aido-autolab-evaluator')
+BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE = range(8)
+RESET_SEQ = "\033[0m"
+COLOR_SEQ = "\033[1;%dm"
+BOLD_SEQ = "\033[1m"
+COLORS = {
+    'WARNING': YELLOW,
+    'INFO': WHITE,
+    'DEBUG': BLUE,
+    'CRITICAL': YELLOW,
+    'ERROR': RED
+}
+
+
+class ColoredFormatter(logging.Formatter):
+
+    def __init__(self, msg, use_color=True):
+        logging.Formatter.__init__(self, msg)
+        self.use_color = use_color
+
+    def format(self, record):
+        levelname = record.levelname
+        if self.use_color and levelname in COLORS:
+            levelname_color = COLOR_SEQ % (30 + COLORS[levelname]) + levelname + RESET_SEQ
+            record.levelname = levelname_color
+        return logging.Formatter.format(self, record)
+
+
+class ColoredLogger(logging.Logger):
+
+    FORMAT = "[$BOLD%(name)-20s$RESET][%(levelname)-18s]  %(message)s"
+
+    def __init__(self, name):
+        logging.Logger.__init__(self, name, logging.DEBUG)
+
+        color_formatter = ColoredFormatter(self.formatter_message(ColoredLogger.FORMAT, True))
+
+        console = logging.StreamHandler()
+        console.setFormatter(color_formatter)
+
+        self.addHandler(console)
+        return
+
+    @staticmethod
+    def formatter_message(message: str, use_color: bool = True):
+        if use_color:
+            message = message.replace("$RESET", RESET_SEQ).replace("$BOLD", BOLD_SEQ)
+        else:
+            message = message.replace("$RESET", "").replace("$BOLD", "")
+        return message
+
+
+logger = ColoredLogger('aido-autolab-evaluator')
 logger.setLevel(logging.INFO)
 if 'DEBUG' in os.environ and os.environ['DEBUG'].lower() in ['true', 'yes', '1']:
     logger.setLevel(logging.DEBUG)
@@ -21,7 +71,6 @@ AUTOLAB_LOCALIZATION_SERVER_PORT = 9091
 
 
 class Storage:
-
     AIDO_VERSION = None
 
     @classmethod
