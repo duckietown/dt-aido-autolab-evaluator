@@ -18,14 +18,15 @@ from dt_authentication import DuckietownToken
 from .constants import logger, AutobotStatus
 from .job import EvaluationJob
 from .entities import Autolab, Autobot
-from .utils import StoppableThread
+from .utils import StoppableThread, StoppableResource
 
 chlogger.setLevel(logging.DEBUG)
 
 
-class AIDOAutolabEvaluator:
+class AIDOAutolabEvaluator(StoppableResource):
 
     def __init__(self, token: str, autolab: Autolab, features: dict = None):
+        super().__init__()
         # parse args
         if features is None:
             features = dict()
@@ -42,6 +43,10 @@ class AIDOAutolabEvaluator:
         # launch heartbeat to keep the job assignation active
         self._heart = AIDOAutolabEvaluatorHeartBeat(self)
         self._heart.start()
+        # shutdown order
+        self.register_shutdown_callback(self._heart.shutdown)
+        self.register_shutdown_callback(self._heart.join)
+        self.register_shutdown_callback(self._shutdown)
 
     @property
     def token(self) -> str:
@@ -87,16 +92,10 @@ class AIDOAutolabEvaluator:
     def clear(self):
         self._job = None
 
-    def shutdown(self):
-        # terminate heart thread
-        try:
-            self._heart.shutdown()
-            self._heart.join()
-        except BaseException:
-            pass
-        # abort job (if any)
-        if self._job is not None:
-            self._job.report(ChallengesConstants.STATUS_JOB_ABORTED, 'Operator SIGINT')
+    def _shutdown(self):
+        # terminate job (if any)
+        if self._job is not None and not self._job.done:
+            self._job.shutdown()
 
     def abort(self, reason: str, status: JobStatusString = ChallengesConstants.STATUS_JOB_ABORTED):
         logger.warning(f"Received request to abort, reason reads `{reason}`.")
@@ -166,7 +165,11 @@ class AIDOAutolabEvaluator:
                 # kill if it is running
                 if container.status == 'running':
                     logger.debug(f'An old instance of `{container_name}` was running, killing it.')
-                    container.kill()
+                    try:
+                        container.kill()
+                        container.wait()
+                    except docker.errors.NotFound:
+                        pass
                 # wait until the user removes it
                 while True:
                     try:
@@ -185,7 +188,7 @@ class AIDOAutolabEvaluator:
             autobot = cast(Autobot, robot)
             # put the robot in estop mode
             logger.debug(f'Engaging ESTOP on `{autobot.name}`')
-            thread = StoppableThread(frequency=1, target=autobot.stop)
+            thread = StoppableThread(target=autobot.stop)
             thread.start()
             # wait for the estop to engage
             autobot.join(until=AutobotStatus(estop=True, moving=False))
@@ -198,12 +201,12 @@ class AIDOAutolabEvaluator:
         for robot in self._autolab.get_robots(Autobot, len(scenario.robots)):
             autobot = cast(Autobot, robot)
             container_name = f"aido-fifos-{autobot.name}"
+            image_name = "duckietown/dt-duckiebot-fifos-bridge:daffy-amd64"
             # run new container
-            logger.debug(f'Running FIFOs container `{self._job.solution_image}` '
-                         f'for `{autobot.name}`')
+            logger.debug(f'Running FIFOs container `{image_name}` for `{autobot.name}`.')
             container_cfg = {
                 'name': container_name,
-                'image': "duckietown/dt-duckiebot-fifos-bridge:daffy-amd64",
+                'image': image_name,
                 'environment': {
                     'VEHICLE_NAME': robot.name,
                     'ROBOT_TYPE': robot.type,
@@ -225,7 +228,7 @@ class AIDOAutolabEvaluator:
                 'detach': True
             }
             container = client.containers.run(**container_cfg)
-            self._job.fifos_container(container)
+            self._job.fifos_container = container
 
     def launch_solution(self):
         client = docker.from_env()
@@ -261,11 +264,11 @@ class AIDOAutolabEvaluator:
             }
             container = client.containers.run(**container_cfg)
             # spin a container monitor
-            monitor = ContainerMonitor(1, self, container)
+            monitor = ContainerMonitor(self, container)
             monitor.start()
             # store container and monitor into Job
-            self._job.solution_container(container)
-            self._job.solution_container_monitor(monitor)
+            self._job.solution_container = container
+            self._job.solution_container_monitor = monitor
 
     def wait_for_solution_commands(self):
         scenario = self._job.get_scenario()
@@ -273,10 +276,13 @@ class AIDOAutolabEvaluator:
         for robot in self._autolab.get_robots(Autobot, len(scenario.robots)):
             autobot = cast(Autobot, robot)
             # wait for command messages
-            thread = Thread(
+            thread = StoppableThread(
                 target=autobot.join,
-                kwargs={'until': AutobotStatus(estop=True, moving=True)}
+                one_shot=True,
+                # **kwargs
+                until=AutobotStatus(estop=True, moving=True)
             )
+            self.register_shutdown_callback(thread.shutdown)
             thread.start()
             workers.append(thread)
         # join the workers
@@ -287,7 +293,7 @@ class AIDOAutolabEvaluator:
             except BaseException:
                 pass
 
-    def enable_robots(self):
+    def engage_robots(self):
         scenario = self._job.get_scenario()
         for robot in self._autolab.get_robots(Autobot, len(scenario.robots)):
             autobot = cast(Autobot, robot)
@@ -296,17 +302,35 @@ class AIDOAutolabEvaluator:
             thread = Thread(target=autobot.go)
             thread.start()
 
+    def disengage_robots(self):
+        scenario = self._job.get_scenario()
+        for robot in self._autolab.get_robots(Autobot, len(scenario.robots)):
+            autobot = cast(Autobot, robot)
+            # lift the robot's estop
+            logger.debug(f'Sending ESTOP to `{autobot.name}`')
+            thread = Thread(target=autobot.stop)
+            thread.start()
+
 
 class ContainerMonitor(StoppableThread):
 
-    def __init__(self, frequency: int, evaluator: AIDOAutolabEvaluator, container, *args, **kwargs):
-        super(ContainerMonitor, self).__init__(frequency, self._check, *args, **kwargs)
+    def __init__(self, evaluator: AIDOAutolabEvaluator, container, **kwargs):
+        super(ContainerMonitor, self).__init__(
+            self._check,
+            one_shot=False,
+            **kwargs
+        )
         self._evaluator = evaluator
         self._container = container
 
     def _check(self):
-        res = self._container.wait()
-        if res['StatusCode'] != 0:
+        try:
+            res = self._container.wait()
+            status_code = res['StatusCode']
+        except docker.errors.NotFound:
+            status_code = -1
+        if status_code != 0:
+            logs = "(no logs)"
             # the container died
             logs = self._container.logs()
             self._evaluator.job.report(ChallengesConstants.STATUS_JOB_FAILED, logs)
@@ -341,7 +365,6 @@ class AIDOAutolabEvaluatorHeartBeat(Thread):
             return
         # noinspection PyBroadException
         try:
-            logger.debug("[heart]: - beep!")
             res_ = dtserver_job_heartbeat(
                 self._evaluator.token,
                 job_id=self._evaluator.job.id,

@@ -14,6 +14,7 @@ from duckietown_challenges.types import JobStatusString
 
 from .constants import Storage, logger
 from .entities import Scenario
+from .utils import StoppableResource
 
 
 class StatsDict(TypedDict):
@@ -21,9 +22,11 @@ class StatsDict(TypedDict):
     msg: str
 
 
-class EvaluationJob:
+class EvaluationJob(StoppableResource):
 
     def __init__(self, evaluator, job_id: int, aws_config: dict = None, **info):
+        super().__init__()
+        # store parameters
         self._evaluator = evaluator
         self._job_id: int = job_id
         self._aws_config: Optional[AWSConfig] = aws_config
@@ -56,6 +59,9 @@ class EvaluationJob:
         self._uploaded_files = []
         # status
         self._status = ChallengesConstants.STATUS_JOB_EVALUATION
+        self._done = False
+        # shutdown order
+        self.register_shutdown_callback(self.abort, "Job shutdown")
 
     @property
     def id(self) -> int:
@@ -64,6 +70,10 @@ class EvaluationJob:
     @property
     def status(self) -> str:
         return self._status
+
+    @property
+    def done(self) -> bool:
+        return self._done
 
     @property
     def scenario_image(self) -> str:
@@ -117,16 +127,41 @@ class EvaluationJob:
         # debug
         logger.debug("Files to upload to S3:\n\t" + "\n\t".join(to_upload.keys()))
         # try connecting to S3
-        try_s3(aws_config=self.aws_config)
+        try_s3(aws_config=self._aws_config)
         # upload artefacts
         self._uploaded_files = upload_files(self._results_dir, aws_config=self.aws_config)
         return self._uploaded_files
 
+    def abort(self, msg: str):
+        self.report(ChallengesConstants.STATUS_JOB_ABORTED, msg)
+
     def report(self, status: JobStatusString, msg: str = None):
+        logger.info(f'[Job:{self.id}] Reporting status `{str(status)}` to server.')
         stats = StatsDict(msg=msg or "", scores={})
         ntrials = 5
         report_res = None
         self._status = status
+        self._done = True
+
+        # TODO: remove
+        __a = {
+            'token': self._evaluator.token,
+            'job_id': self.id,
+            'stats': stats,
+            'result': status,
+            'ipfs_hashes': {},
+            'machine_id': self._evaluator.machine_id,
+            'process_id': self._evaluator.process_id,
+            'evaluator_version': self._evaluator.version,
+            'uploaded': self._uploaded_files,
+            'impersonate': self._evaluator.who,
+            'timeout': ChallengesConstants.DEFAULT_TIMEOUT
+        }
+        print(__a)
+        print(json.dumps(__a, indent=4, sort_keys=True))
+        # TODO: remove
+
+
         for trial in range(ntrials):
             # noinspection PyBroadException
             try:

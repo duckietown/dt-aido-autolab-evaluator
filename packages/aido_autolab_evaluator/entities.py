@@ -3,6 +3,8 @@ import os
 import abc
 import time
 import json
+from enum import IntEnum
+
 import yaml
 import glob
 import zipfile
@@ -169,6 +171,10 @@ class Autolab:
                              f'{num} were requested, only {len(bots)} are available.')
         return bots[:num]
 
+    def new_localization_experiment(self, duration: int, precision_ms: int):
+        # TODO: `localhost` is hardcoded for now, it should be the town name
+        return LocalizationExperiment('localhost', duration, precision_ms)
+
     @staticmethod
     def load(name: str):
         # compile full autolab path
@@ -203,6 +209,51 @@ class Autolab:
         # glob that pattern
         autolabs_fpaths = glob.glob(autolabs_star_fpath)
         return [Path(fpath).stem for fpath in autolabs_fpaths]
+
+
+class LocalizationExperimentStatus(IntEnum):
+    CREATED = 0
+    RUNNING = 1
+    STOPPED = 2
+    POSTPROCESSING = 3
+    FINISHED = 8
+    ERROR = 9
+
+
+class LocalizationExperiment:
+
+    def __init__(self, api_hostname: str, duration: int, precision_ms: int):
+        self._api_hostname = api_hostname
+        self._duration = duration
+        self._precision_ms = precision_ms
+        res = _call_api(self._get_url('create', duration=duration, precision_ms=precision_ms))
+        self._id = res['id']
+
+    def start(self):
+        _call_api(self._get_url('start', self._id))
+
+    def stop(self):
+        _call_api(self._get_url('stop', self._id))
+
+    def status(self):
+        res = _call_api(self._get_url('status', self._id))
+        return LocalizationExperimentStatus(res)
+
+    def results(self):
+        res = _call_api(self._get_url('results', self._id))
+        return res['results']
+
+    def join(self, until: LocalizationExperimentStatus):
+        while True:
+            if self.status() == until:
+                break
+            time.sleep(1)
+
+    def _get_url(self, action: str, *args, **kwargs):
+        args = '/'.join(*args)
+        qs = '&'.join([f'{k}={v}' for k, v in kwargs])
+        return f"http://{self._api_hostname}/{action}/{args}?{qs}"
+
 
 
 @dataclasses.dataclass

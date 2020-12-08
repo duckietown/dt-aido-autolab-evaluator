@@ -3,12 +3,17 @@ import os
 import time
 import logging
 import dataclasses
+from types import SimpleNamespace
 from typing import Optional
+
+import docker
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import yaml
 
+from aido_autolab_evaluator.entities import LocalizationExperimentStatus
 from aido_autolab_evaluator.renderers import ScreenTableRenderer
+from aido_autolab_evaluator.utils import StoppableThread
 from dt_class_utils import DTProcess
 from duckietown_challenges.challenges_constants import ChallengesConstants
 
@@ -19,6 +24,10 @@ logger = logging.getLogger('AIDOAutolabEvaluator')
 logger.setLevel(logging.INFO)
 
 
+MAX_EXPERIMENT_DURATION = 60
+LOCALIZATION_PRECISION_MS = 200
+
+
 class AIDOAutolabEvaluatorPlainInterface(DTProcess):
 
     def __init__(self, evaluator: AIDOAutolabEvaluator):
@@ -26,8 +35,8 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
         # store parameters
         self._evaluator = evaluator
         # register shutdown callbacks
-        self.register_shutdown_callback(self._evaluator.clean_containers)
         self.register_shutdown_callback(self._evaluator.shutdown)
+        self.register_shutdown_callback(self._evaluator.clean_containers)
 
     def start(self):
         print('=' * 80)
@@ -90,6 +99,10 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
             logger.info('Resetting robots...')
             evaluator.reset_robots()
             logger.info('Robots correctly reset!')
+            # load code
+            logger.info('Launching FIFOs...')
+            evaluator.launch_fifos_bridge()
+            logger.info('FIFOs are launched!')
             # show scenario
             scenario = job.get_scenario()
             logger.info('Place the robots as shown in the image. '
@@ -106,36 +119,93 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
             logger.info('Launching solution...')
             evaluator.launch_solution()
             logger.info('Solution is launched!')
+            # create a localization experiment
+            experiment = autolab.new_localization_experiment(
+                duration=MAX_EXPERIMENT_DURATION,
+                precision_ms=LOCALIZATION_PRECISION_MS
+            )
             # wait for solution to get healthy
             logger.info('Waiting for the solution to get healty (e.g., start publishing commands)')
             evaluator.wait_for_solution_commands()
             logger.info('The robots are ready to drive!')
+            # start localization experiment
+            logger.info('Starting localization experiment...')
+            experiment.start()
             # enable robots' wheels
-            logger.info('Releasing robots...')
-            evaluator.enable_robots()
+            logger.info('Engaging robots...')
+            evaluator.engage_robots()
             logger.info('Robots are go for launch!')
             # monitor the solution
-            timeout = 30
             stime = time.time()
             while True:
                 logger.info('Monitoring container...')
-                job.solution_container.reload()
-                if job.solution_container.status != 'running':
-                    logger.info('The solution container stopped by itself.')
+                try:
+                    job.solution_container.reload()
+                except docker.errors.NotFound:
+                    logger.warning('The solution container is gone. Not sure what happened to it.')
                     break
-                if time.time() - stime > timeout:
+                if job.solution_container.status != 'running':
+                    logger.warning('The solution container stopped by itself.')
+                    break
+                if time.time() - stime > MAX_EXPERIMENT_DURATION:
                     logger.info('Submission timed out. Stopping.')
                     break
                 if job.status != ChallengesConstants.STATUS_JOB_EVALUATION:
                     logger.info(f'Submission transitioned to state `{str(job.status)}`')
                     break
                 time.sleep(2)
+            logger.info('Disengaging robots...')
+            evaluator.disengage_robots()
+            logger.info('Robots should be stopped!')
+            # stop localization experiment
+            logger.info('Stopping localization experiment...')
+            if experiment.status() == LocalizationExperimentStatus.RUNNING:
+                experiment.stop()
+            # wait for localization experiment to post-process
+            logger.info('Post-processing localization experiment...')
+            # TODO: we need to handle the ERROR state
+            experiment.join(until=LocalizationExperimentStatus.FINISHED)
+            logger.info('Localization experiment completed!')
+
             # ask the operator how it did go
-            outcome = None
-            while outcome not in ['s', 'f']:
-                outcome = input("How did it go? [s] Success, [f] Failed: ")
+
+            # try:
+            #     while True:
+            #         x = input('::> ')
+            #         print('\nYou entered %r\n' % x)
+            # except KeyboardInterrupt:
+            #     print("\nInterrupted!")
+            #
+            # exit(0)
+
+
+
+
+
+
+
+
+            interaction = SimpleNamespace(
+                options=['s', 'f'],
+                answer=None
+            )
+
+            def interact():
+                while interaction.answer not in interaction.options:
+                    res = input("How did it go? [s] Success, [f] Failed: ")
+                    res = res.lower().strip()
+                    if res in interaction.options:
+                        interaction.answer = res
+                        return
+
+            interactor = StoppableThread(target=interact)
+
+            while not self.is_shutdown():
+                if interaction.answer is None:
+                    time.sleep(0.2)
+
             # ---
-            if outcome == 'f':
+            if interaction.answer == 'f':
                 job.report(ChallengesConstants.STATUS_JOB_FAILED, 'Failed by the operator')
                 sleep(2)
                 continue
