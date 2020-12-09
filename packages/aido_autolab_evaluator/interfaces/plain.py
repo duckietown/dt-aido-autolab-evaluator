@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import yaml
 
+from aido_autolab_evaluator import __version__
 from aido_autolab_evaluator.entities import LocalizationExperimentStatus
 from aido_autolab_evaluator.utils import StoppableThread, StoppableResource
 from dt_class_utils import DTProcess
@@ -61,6 +62,27 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
                     f'\n\t robots: {robots}')
 
         while not self.is_shutdown():
+            print(f'\nAIDO Autolab Evaluator (v.{__version__})')
+            print(f'\n- Autolab Operator #{evaluator.operator.uid}')
+            # start interaction with the operator
+            interaction = Interaction(
+                question="What do you want to do? [a] Accept new submissions, [q] Quit: ",
+                options=['a', 'q']
+            )
+            interaction.start()
+            # wait for the operator
+            while not self.is_shutdown():
+                if interaction.answer is not None:
+                    break
+                time.sleep(0.2)
+            interaction.shutdown()
+            decision = interaction.answer
+            if decision == 'q':
+                print('Sounds good, bye bye!')
+                evaluator.reset()
+                return
+            # ---
+
             logger.info('Querying server for submission...')
             evaluator.take_submission()
             # check if we got a job
@@ -158,7 +180,7 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
                 if job.status != ChallengesConstants.STATUS_JOB_EVALUATION:
                     logger.info(f'Submission transitioned to state `{str(job.status)}`')
                     break
-                time.sleep(2)
+                time.sleep(1)
             # disengage robots
             logger.info('Disengaging robots...')
             job.mark_stop()
