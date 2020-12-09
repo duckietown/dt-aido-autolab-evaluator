@@ -15,7 +15,7 @@ from duckietown_challenges_runner import __version__
 from duckietown_challenges_runner.runner import get_features
 
 from dt_authentication import DuckietownToken
-from .constants import logger, AutobotStatus
+from .constants import logger, AutobotStatus, ROSBagStatus
 from .job import EvaluationJob
 from .entities import Autolab, Autobot, Watchtower
 from .utils import StoppableThread, StoppableResource, pretty_print
@@ -132,25 +132,11 @@ class AIDOAutolabEvaluator(StoppableResource):
             volumes={scenario_dir: {'bind': '/out', 'mode': 'rw'}}
         )
 
-    def download_duckiebot_configuration(self):
-        scenario = self._job.get_scenario()
-        # get list of remote robots sorted
-        remote_names = sorted(scenario.robots.keys())
-        # map local to remote names
-        for i, robot in enumerate(self._autolab.get_robots(Autobot, len(scenario.robots))):
-            autobot = cast(Autobot, robot)
-            remote_robot_name = remote_names[i]
-            autobot.remote_name = remote_robot_name
-            # download `config` directory from the robot
-            dest_dir = self._job.storage_dir(f'output/robots/{autobot.remote_name}')
-            autobot.download_robot_config(dest_dir)
-
     def clean_containers(self, remove: bool = True):
         if self._job is None:
             return
         client = docker.from_env()
-        scenario = self._job.get_scenario()
-        for robot in self._autolab.get_robots(Autobot, len(scenario.robots)):
+        for robot in self._job.get_robots(Autobot):
             autobot = cast(Autobot, robot)
             logger.debug(f'Removing containers for `{autobot.name}`')
             for container_name in [f"aido-solution-{autobot.name}", f"aido-fifos-{autobot.name}"]:
@@ -198,9 +184,35 @@ class AIDOAutolabEvaluator(StoppableResource):
                             break
                         time.sleep(2)
 
-    def disengage_robots(self, join: bool = True):
+    def assign_robots(self):
         scenario = self._job.get_scenario()
-        for robot in self._autolab.get_robots(Autobot, len(scenario.robots)):
+        # get list of remote robots sorted
+        remote_names = sorted(scenario.robots.keys())
+        # get autobots
+        for i, robot in enumerate(self._autolab.get_robots(Autobot, len(scenario.robots))):
+            remote_robot_name = remote_names[i]
+            robot.remote_name = remote_robot_name
+            # put the robot in the job
+            self._job.robots.append(robot)
+        # get watchtowers
+        for robot in self._autolab.get_robots(Watchtower):
+            robot.remote_name = robot.name
+            # put the robot in the job
+            self._job.robots.append(robot)
+
+    def download_robots_configuration(self):
+        # download config directory
+        for robot in self._job.get_robots([Autobot, Watchtower]):
+            # figure out the destionation
+            # TODO: ==> this should be rectified in AIDO6, use `duckiebot` instead of `robots`
+            rcat = {'duckiebot': 'robots', 'watchtower': 'watchtowers'}[robot.type]
+            # TODO: <== this should be rectified in AIDO6, use `duckiebot` instead of `robots`
+            # download `config` directory from the robot
+            dest_dir = self._job.storage_dir(f'output/{rcat}/{robot.remote_name}')
+            robot.download_robot_config(dest_dir)
+
+    def disengage_robots(self, join: bool = True):
+        for robot in self._job.get_robots(Autobot):
             autobot = cast(Autobot, robot)
             # put the robot in estop mode
             logger.debug(f'Engaging ESTOP on `{autobot.name}`')
@@ -214,8 +226,7 @@ class AIDOAutolabEvaluator(StoppableResource):
 
     def launch_fifos_bridge(self):
         client = docker.from_env()
-        scenario = self._job.get_scenario()
-        for robot in self._autolab.get_robots(Autobot, len(scenario.robots)):
+        for robot in self._job.get_robots(Autobot):
             autobot = cast(Autobot, robot)
             container_name = f"aido-fifos-{autobot.name}"
             image_name = "duckietown/dt-duckiebot-fifos-bridge:daffy-amd64"
@@ -251,14 +262,56 @@ class AIDOAutolabEvaluator(StoppableResource):
             self._job.fifos_container = container
 
     def start_robots_logging(self):
-        scenario = self._job.get_scenario()
-        for robot in self._autolab.get_robots([Autobot, Watchtower]):
-            robot.new_bag_recorder()
+        workers = []
+        # send requests in parallel
+        for robot in self._job.get_robots([Autobot, Watchtower]):
+            recorder = robot.new_bag_recorder()
+            worker = Thread(target=recorder.start)
+            workers.append(worker)
+            worker.start()
+            self._job.robots_loggers.append(recorder)
+        # wait for the requests to go out
+        for worker in workers:
+            worker.join()
+
+    def stop_robots_logging(self):
+        workers = []
+        # send requests in parallel
+        for recorder in self._job.robots_loggers:
+            worker = Thread(target=recorder.stop)
+            workers.append(worker)
+            worker.start()
+        # wait for the requests to go out
+        for worker in workers:
+            worker.join()
+
+    def download_robots_logs(self):
+        logger.info("Waiting for robots to stop recording...")
+        for recorder in self._job.robots_loggers:
+            recorder.join([ROSBagStatus.POSTPROCESSING, ROSBagStatus.READY])
+        logger.info("All robots stopped recording!")
+        # ---
+        logger.info("Waiting for robots to stop post-processing their recordings...")
+        for recorder in self._job.robots_loggers:
+            recorder.join([ROSBagStatus.READY])
+        logger.info("All robots finished post-processing their recordings!")
+        # ---
+        logger.info("Downloading robots recordings...")
+        for recorder in self._job.robots_loggers:
+            rname = recorder.robot.name
+            # TODO: ==> this should be rectified in AIDO6, use `duckiebot` instead of `robots`
+            rcat = {'duckiebot': 'robots', 'watchtower': 'watchtowers'}[recorder.robot.type]
+            fname = {'duckiebot': 'robot', 'watchtower': 'watchtower'}[recorder.robot.type]
+            # TODO: <== this should be rectified in AIDO6, use `duckiebot` instead of `robots`
+            bag_dpath = self._job.storage_dir(f'output/{rcat}/{rname}')
+            bag_fpath = os.path.join(bag_dpath, f'{fname}.bag')
+            logger.info(f"Downloading bag from `{rname}`...")
+            recorder.download(bag_fpath)
+        logger.info("All robots recordings successfully downloaded!")
 
     def launch_solution(self):
         client = docker.from_env()
-        scenario = self._job.get_scenario()
-        for robot in self._autolab.get_robots(Autobot, len(scenario.robots)):
+        for robot in self._job.get_robots(Autobot):
             autobot = cast(Autobot, robot)
             container_name = f"aido-solution-{autobot.name}"
             # run new container
@@ -298,9 +351,8 @@ class AIDOAutolabEvaluator(StoppableResource):
             self._job.solution_container_monitor = monitor
 
     def wait_for_solution_commands(self):
-        scenario = self._job.get_scenario()
         workers = []
-        for robot in self._autolab.get_robots(Autobot, len(scenario.robots)):
+        for robot in self._job.get_robots(Autobot):
             autobot = cast(Autobot, robot)
             # wait for command messages
             thread = StoppableThread(
@@ -321,8 +373,7 @@ class AIDOAutolabEvaluator(StoppableResource):
                 pass
 
     def engage_robots(self):
-        scenario = self._job.get_scenario()
-        for robot in self._autolab.get_robots(Autobot, len(scenario.robots)):
+        for robot in self._job.get_robots(Autobot):
             autobot = cast(Autobot, robot)
             # lift the robot's estop
             logger.debug(f'Releasing ESTOP on `{autobot.name}`')
@@ -341,7 +392,7 @@ class AIDOAutolabEvaluator(StoppableResource):
             print('.\n')
             time.sleep(0.2)
         print('.' * 100)
-        time.sleep(4)
+        time.sleep(2)
 
 
 class ContainerMonitor(StoppableThread):

@@ -4,7 +4,7 @@ import json
 import time
 import shutil
 import traceback
-from typing import Optional, List, Dict, TypedDict
+from typing import Optional, List, Dict, TypedDict, Union
 
 from duckietown_challenges import dtserver_report_job
 from duckietown_challenges.rest_methods import AWSConfig, ArtefactDict
@@ -13,7 +13,7 @@ from duckietown_challenges.challenges_constants import ChallengesConstants
 from duckietown_challenges.types import JobStatusString
 
 from .constants import Storage, logger
-from .entities import Scenario
+from .entities import Scenario, Robot
 from .utils import StoppableResource
 
 
@@ -47,6 +47,8 @@ class EvaluationJob(StoppableResource):
         self._solution_container = None
         self._fifos_container = None
         self._solution_container_monitor = None
+        self._robots = []
+        self._robots_loggers = []
         self._start_time = None
         self._end_time = None
         # ---
@@ -119,6 +121,14 @@ class EvaluationJob(StoppableResource):
     def solution_container_monitor(self, val):
         self._solution_container_monitor = val
 
+    @property
+    def robots(self):
+        return self._robots
+
+    @property
+    def robots_loggers(self):
+        return self._robots_loggers
+
     def mark_start(self):
         self._start_time = time.time()
 
@@ -140,9 +150,18 @@ class EvaluationJob(StoppableResource):
                 **yaml.safe_load(fin)
             )
 
+    def get_robots(self, rtype: Optional[Union[Robot.__class__, List[Robot.__class__]]] = None) \
+            -> List[Robot]:
+        if isinstance(rtype, list):
+            rtype = tuple(rtype)
+        if not isinstance(rtype, tuple):
+            rtype = (rtype,)
+        bots = [rbot for rbot in self.robots if isinstance(rbot, rtype)]
+        return bots
+
     def upload_artefacts(self) -> List[ArtefactDict]:
         # add time info
-        time_info = {'start': self._start_time, 'end': self._start_time}
+        time_info = {'start': self._start_time, 'end': self._end_time}
         with open(os.path.join(self._results_dir, 'time.yaml'), 'wt') as fout:
             yaml.safe_dump(time_info, fout)
         # upload_files

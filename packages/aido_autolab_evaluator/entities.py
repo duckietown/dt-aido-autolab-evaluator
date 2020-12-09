@@ -36,6 +36,7 @@ class Entity:
 class ROSBag(Entity):
     robot: str
     name: str
+    _is_shutdown: bool = False
 
     @property
     def status(self):
@@ -49,7 +50,7 @@ class ROSBag(Entity):
 
     def download(self, destination: str):
         destination = os.path.abspath(destination)
-        subprocess.check_call(['wget', self.url, '-P', destination])
+        subprocess.check_call(['wget', self.url, '-O', destination])
 
     def join(self):
         while not self._is_shutdown:
@@ -62,31 +63,42 @@ class ROSBag(Entity):
 class ROSBagRecorder(Entity):
     robot: 'Robot'
     bag: ROSBag = None
+    _is_shutdown: bool = False
 
     @property
     def status(self):
         if self.bag is None:
             return ROSBagStatus.CREATED
-        api_url = f'http://{self.robot}.local/ros/bag/recorder/status/{self.bag.name}'
+        api_url = self._get_url('ros', 'bag', 'record', 'status', self.bag.name)
         data = _call_api(api_url)
         return ROSBagStatus.from_string(data['status'])
 
     def start(self):
-        api_url = f'http://{self.robot}.local/ros/bag/recorder/start'
-        data = _call_api(api_url)
+        data = {'topics' : ':'.join(self.robot.topics).lstrip('/')}
+        api_url = self._get_url('ros', 'bag', 'record', 'start')
+        data = _call_api(api_url, method='POST', data=data)
         self.bag = ROSBag(self.robot.name, data['name'])
 
     def stop(self):
         if self.bag is None:
             raise ValueError("You cannot stop a recorder that is not running")
-        api_url = f'http://{self.robot}.local/ros/bag/recorder/stop/{self.bag.name}'
+        api_url = self._get_url('ros', 'bag', 'record', 'stop', self.bag.name)
         _call_api(api_url)
 
-    def join(self):
+    def join(self, status: Union[ROSBagStatus, List[ROSBagStatus]]):
+        if not isinstance(status, list):
+            status = [status]
+        # ---
         while not self._is_shutdown:
-            if self.status == ROSBagStatus.READY:
+            if self.status in status:
                 break
             time.sleep(1)
+
+    def download(self, destination: str):
+        return self.bag.download(destination)
+
+    def _get_url(self, *args):
+        return f"http://{self.robot.name}.local/{'/'.join(args)}"
 
 
 @dataclasses.dataclass
@@ -95,6 +107,10 @@ class Robot(Entity, abc.ABC):
     type: str
     priority: int = 0
     remote_name: Optional[str] = None
+
+    @property
+    def topics(self) -> List[str]:
+        raise NotImplemented()
 
     @property
     def hostname(self) -> str:
@@ -117,16 +133,20 @@ class Robot(Entity, abc.ABC):
         zf = zipfile.ZipFile(io.BytesIO(zip_binary), "r")
         zf.extractall(destination)
 
-    @abc.abstractmethod
-    def get_topics(self) -> List[str]:
-        pass
-
     def _api_url(self, api: str, resource: str) -> str:
         return f"http://{self.hostname}/{api}/{resource}"
 
 
 @dataclasses.dataclass
 class Autobot(Robot):
+
+    @property
+    def topics(self) -> List[str]:
+        return [
+            f'/{self.name}/camera_node/camera_info',
+            f'/{self.name}/camera_node/image/compressed',
+            f'/{self.name}/wheels_driver_node/wheels_cmd_executed'
+        ]
 
     @property
     def status(self) -> AutobotStatus:
@@ -162,6 +182,13 @@ class Autobot(Robot):
 
 class Watchtower(Robot):
 
+    @property
+    def topics(self) -> List[str]:
+        return [
+            f'/{self.name}/camera_node/camera_info',
+            f'/{self.name}/camera_node/image/compressed'
+        ]
+
     def join(self, until: AutobotStatus):
         return
 
@@ -178,7 +205,9 @@ class Autolab:
 
     def get_robots(self, rtype: Union[Robot.__class__, List[Robot.__class__]],
                    num: Optional[int] = None) -> List[Robot]:
-        if not isinstance(rtype, Iterable):
+        if isinstance(rtype, list):
+            rtype = tuple(rtype)
+        if not isinstance(rtype, tuple):
             rtype = (rtype,)
         bots = [rbot for rbot in self.robots.values() if isinstance(rbot, rtype)]
         bots = sorted(bots, key=lambda r: r.priority, reverse=True)
@@ -302,13 +331,14 @@ class Scenario:
     image_file: str
 
 
-def _call_api(url: str) -> dict:
+def _call_api(url: str, method: str = 'GET', **kwargs) -> dict:
     res = None
     ntrials = 3
+    action = getattr(requests, method.lower())
     for trial in range(ntrials):
         try:
-            logger.debug(f'[GET]: {url}')
-            res = requests.get(url).json()
+            logger.debug(f'[{method}]: {url}')
+            res = action(url, **kwargs).json()
             break
         except (requests.RequestException, json.JSONDecodeError) as e:
             logger.warning(f'An error occurred while trying to reach the following resource.'
