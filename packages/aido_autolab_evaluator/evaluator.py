@@ -193,12 +193,12 @@ class AIDOAutolabEvaluator(StoppableResource):
             remote_robot_name = remote_names[i]
             robot.remote_name = remote_robot_name
             # put the robot in the job
-            self._job.robots.append(robot)
+            self._job.robots[robot.name] = robot
         # get watchtowers
         for robot in self._autolab.get_robots(Watchtower):
             robot.remote_name = robot.name
             # put the robot in the job
-            self._job.robots.append(robot)
+            self._job.robots[robot.name] = robot
 
     def download_robots_configuration(self):
         # download config directory
@@ -291,22 +291,31 @@ class AIDOAutolabEvaluator(StoppableResource):
             recorder.join([ROSBagStatus.POSTPROCESSING, ROSBagStatus.READY])
         logger.info("All robots stopped recording!")
         # ---
-        logger.info("Waiting for robots to stop post-processing their recordings...")
-        for recorder in self._job.robots_loggers:
-            recorder.join([ROSBagStatus.READY])
-        logger.info("All robots finished post-processing their recordings!")
-        # ---
-        logger.info("Downloading robots recordings...")
-        for recorder in self._job.robots_loggers:
-            rname = recorder.robot.name
+
+        def _wait_then_download(_recorder):
+            _recorder.join([ROSBagStatus.READY])
+            rname = _recorder.robot.name
+            rrname = _recorder.robot.remote_name
             # TODO: ==> this should be rectified in AIDO6, use `duckiebot` instead of `robots`
-            rcat = {'duckiebot': 'robots', 'watchtower': 'watchtowers'}[recorder.robot.type]
-            fname = {'duckiebot': 'robot', 'watchtower': 'watchtower'}[recorder.robot.type]
+            rcat = {'duckiebot': 'robots', 'watchtower': 'watchtowers'}[_recorder.robot.type]
+            fname = {'duckiebot': 'robot', 'watchtower': 'watchtower'}[_recorder.robot.type]
             # TODO: <== this should be rectified in AIDO6, use `duckiebot` instead of `robots`
-            bag_dpath = self._job.storage_dir(f'output/{rcat}/{rname}')
+            bag_dpath = self._job.storage_dir(f'output/{rcat}/{rrname}')
             bag_fpath = os.path.join(bag_dpath, f'{fname}.bag')
             logger.info(f"Downloading bag from `{rname}`...")
-            recorder.download(bag_fpath)
+            _recorder.download(bag_fpath)
+
+        # ---
+        logger.info("Downloading robots recordings...")
+        workers = set()
+        for recorder in self._job.robots_loggers:
+            worker = Thread(target=_wait_then_download, args=(recorder,))
+            worker.start()
+            workers.add(worker)
+        # wait for downloads to complete
+        logger.info("Waiting...")
+        for worker in workers:
+            worker.join()
         logger.info("All robots recordings successfully downloaded!")
 
     def launch_solution(self):

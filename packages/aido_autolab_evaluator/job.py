@@ -47,7 +47,7 @@ class EvaluationJob(StoppableResource):
         self._solution_container = None
         self._fifos_container = None
         self._solution_container_monitor = None
-        self._robots = []
+        self._robots = {}
         self._robots_loggers = []
         self._start_time = None
         self._end_time = None
@@ -122,7 +122,7 @@ class EvaluationJob(StoppableResource):
         self._solution_container_monitor = val
 
     @property
-    def robots(self):
+    def robots(self) -> Dict[str, Robot]:
         return self._robots
 
     @property
@@ -156,7 +156,7 @@ class EvaluationJob(StoppableResource):
             rtype = tuple(rtype)
         if not isinstance(rtype, tuple):
             rtype = (rtype,)
-        bots = [rbot for rbot in self.robots if isinstance(rbot, rtype)]
+        bots = [rbot for rbot in self.robots.values() if isinstance(rbot, rtype)]
         return bots
 
     def upload_artefacts(self) -> List[ArtefactDict]:

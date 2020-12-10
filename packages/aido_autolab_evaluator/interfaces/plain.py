@@ -22,8 +22,8 @@ from aido_autolab_evaluator.evaluator import AIDOAutolabEvaluator
 from aido_autolab_evaluator.constants import logger
 
 
-MAX_EXPERIMENT_DURATION = 12
-LOCALIZATION_PRECISION_MS = 200
+MAX_EXPERIMENT_DURATION = 60
+LOCALIZATION_PRECISION_MS = 50
 
 
 class AIDOAutolabEvaluatorPlainInterface(DTProcess):
@@ -96,7 +96,6 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
                 sleep(2)
                 continue
             # got a job, print some info
-            polling = False
             job = evaluator.job
             logger.info(f'\nJob received!'
                         f'\nJob info:'
@@ -108,6 +107,25 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
                         f'\n\t submitter_name: {job.info["submitter_name"]}'
                         f'\n\t protocol: {job.info["protocol"]}'
                         f'\n\t image_digest: {job.info["parameters"]["image_digest"]}')
+            # ask the operator what to do
+            interaction = Interaction(
+                question="What do you want to do? [a] Accept submission, [n] Get a new one ",
+                options=['a', 'n']
+            )
+            interaction.start()
+            # wait for the operator
+            while not self.is_shutdown():
+                if interaction.answer is not None:
+                    break
+                time.sleep(0.2)
+            interaction.shutdown()
+            decision = interaction.answer
+            if decision == 'n':
+                print('Sounds good, let\'s try again!')
+                evaluator.reset()
+                continue
+            polling = False
+            # ---
             # download scenario
             logger.info('Downloading scenario...')
             evaluator.download_scenario()
@@ -240,12 +258,19 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
                 k.split('/')[0]: v for k, v in trajectories.items()
             }
             for robot_name, robot_trajectory in trajectories.items():
+                # exclude robots outside this autolab
                 if robot_name not in autolab.robots:
                     logger.warning('The localization report contained the trajectory of a '
                                    'robot outside this Autolab. Ignoring it.')
                     continue
+                # exclude robots not assigned to this job
+                if robot_name not in job.robots:
+                    continue
                 robot = autolab.robots[robot_name]
-                robot_fpath = job.storage_dir(f'output/robots/{robot.remote_name}')
+                # TODO: ==> this should be rectified in AIDO6, use `duckiebot` instead of `robots`
+                rcat = {'duckiebot': 'robots', 'watchtower': 'watchtowers'}[robot.type]
+                # TODO: <== this should be rectified in AIDO6, use `duckiebot` instead of `robots`
+                robot_fpath = job.storage_dir(f'output/{rcat}/{robot.remote_name}')
                 traj_fpath = os.path.join(robot_fpath, 'trajectory.yaml')
                 logger.debug(f'Writing trajectory for robot `{robot_name}` to `{traj_fpath}`.')
                 with open(traj_fpath, 'wt') as fout:
