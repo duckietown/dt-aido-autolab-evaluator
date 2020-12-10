@@ -186,6 +186,8 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
             # start recording bags
             logger.info('Starting data recording on the robots...')
             evaluator.start_robots_logging()
+            logger.info('Waiting 4 seconds for data recording to start...')
+            time.sleep(4)
             # start localization experiment
             logger.info('Starting localization experiment...')
             experiment.start()
