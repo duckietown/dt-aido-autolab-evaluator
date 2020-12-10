@@ -129,6 +129,7 @@ class Robot(Entity, abc.ABC):
     type: str
     priority: int = 0
     remote_name: Optional[str] = None
+    color: Optional[str] = None
 
     @property
     def topics(self) -> List[str]:

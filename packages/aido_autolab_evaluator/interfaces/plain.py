@@ -152,6 +152,9 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
             scenario = job.get_scenario()
             logger.info('Place the robots as shown in the image. '
                         'Press `q` when done to close the window.')
+            # print the robot's color
+            for robot in job.robots.values():
+                print(f'\t-Robot[{robot.color}]: \t{robot.name}')
             img = mpimg.imread(scenario.image_file)
             plt.imshow(img)
             plt.text(5, 40,

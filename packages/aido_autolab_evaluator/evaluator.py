@@ -192,6 +192,7 @@ class AIDOAutolabEvaluator(StoppableResource):
         for i, robot in enumerate(self._autolab.get_robots(Autobot, len(scenario.robots))):
             remote_robot_name = remote_names[i]
             robot.remote_name = remote_robot_name
+            robot.color = scenario.robots[remote_robot_name]['color']
             # put the robot in the job
             self._job.robots[robot.name] = robot
         # get watchtowers
