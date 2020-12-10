@@ -68,13 +68,13 @@ class ROSBagRecorder(Entity):
     @property
     def status(self):
         if self.bag is None:
-            return ROSBagStatus.CREATED
+            return ROSBagStatus.INIT
         api_url = self._get_url('ros', 'bag', 'record', 'status', self.bag.name)
         data = _call_api(api_url)
         return ROSBagStatus.from_string(data['status'])
 
     def start(self):
-        data = {'topics' : ':'.join(self.robot.topics).lstrip('/')}
+        data = {'topics': ':'.join(self.robot.topics).lstrip('/')}
         api_url = self._get_url('ros', 'bag', 'record', 'start')
         data = _call_api(api_url, method='POST', data=data)
         self.bag = ROSBag(self.robot.name, data['name'])

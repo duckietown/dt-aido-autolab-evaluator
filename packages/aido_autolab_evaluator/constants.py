@@ -90,18 +90,20 @@ class Storage:
 
 
 class ROSBagStatus(IntEnum):
-    CREATED = -1
+    INIT = -1
     RECORDING = 0
     POSTPROCESSING = 1
     READY = 2
+    ERROR = 10
 
     @staticmethod
     def from_string(status: str) -> 'ROSBagStatus':
         return {
-            "CREATED": ROSBagStatus.CREATED,
+            "INIT": ROSBagStatus.INIT,
             "RECORDING": ROSBagStatus.RECORDING,
             "POSTPROCESSING": ROSBagStatus.POSTPROCESSING,
             "READY": ROSBagStatus.READY,
+            "ERROR": ROSBagStatus.ERROR,
         }[status]
 
 
