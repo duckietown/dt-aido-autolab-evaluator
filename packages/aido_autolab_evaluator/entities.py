@@ -77,6 +77,7 @@ class ROSBagRecorder(Entity):
         data = {'topics': ':'.join(self.robot.topics).lstrip('/')}
         api_url = self._get_url('ros', 'bag', 'record', 'start')
         data = _call_api(api_url, method='POST', data=data)
+        self.join(ROSBagStatus.RECORDING)
         self.bag = ROSBag(self.robot.name, data['name'])
 
     def stop(self):
