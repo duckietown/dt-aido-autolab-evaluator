@@ -52,6 +52,10 @@ class ROSBag(Entity):
         destination = os.path.abspath(destination)
         subprocess.check_call(['wget', self.url, '-O', destination])
 
+    def delete(self):
+        api_url = f'http://{self.robot}.local/ros/bag/delete/{self.name}'
+        _call_api(api_url)
+
     def join(self):
         while not self._is_shutdown:
             if self.status == ROSBagStatus.READY:
@@ -73,12 +77,25 @@ class ROSBagRecorder(Entity):
         data = _call_api(api_url)
         return ROSBagStatus.from_string(data['status'])
 
-    def start(self):
+    def _do_record(self):
         data = {'topics': ':'.join(self.robot.topics).lstrip('/')}
         api_url = self._get_url('ros', 'bag', 'record', 'start')
-        data = _call_api(api_url, method='POST', data=data)
-        logger.debug(f"Robot `{self.robot.name}` is recording bag `{data['name']}`...")
-        self.bag = ROSBag(self.robot.name, data['name'])
+        res = _call_api(api_url, method='POST', data=data)
+        logger.debug(f"Robot `{self.robot.name}` is recording bag `{res['name']}`...")
+        self.bag = ROSBag(self.robot.name, res['name'])
+
+    def start(self):
+        self._do_record()
+        # ---
+        while not self._is_shutdown:
+            if self.status == ROSBagStatus.RECORDING:
+                break
+            if self.status == ROSBagStatus.READY:
+                # sometimes this happens, the bag stops recording, in this case, restart logging
+                logger.warning(f"Robot `{self.robot.name}` was recording bag `{self.bag.name}` "
+                               f"but the bag stopped prematurely, re-recording...")
+                self._do_record()
+            time.sleep(1)
         self.join(ROSBagStatus.RECORDING)
 
     def stop(self):
@@ -98,6 +115,9 @@ class ROSBagRecorder(Entity):
 
     def download(self, destination: str):
         return self.bag.download(destination)
+
+    def delete_bag(self):
+        return self.bag.delete()
 
     def _get_url(self, *args):
         return f"http://{self.robot.name}.local/{'/'.join(args)}"

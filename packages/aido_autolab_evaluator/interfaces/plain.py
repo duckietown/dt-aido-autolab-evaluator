@@ -1,9 +1,7 @@
-import dataclasses
 import os
 import sys
 import time
 from threading import Thread
-from types import SimpleNamespace
 from typing import List, Optional
 
 import docker
@@ -13,7 +11,7 @@ import yaml
 
 from aido_autolab_evaluator import __version__
 from aido_autolab_evaluator.entities import LocalizationExperimentStatus
-from aido_autolab_evaluator.utils import StoppableThread, StoppableResource
+from aido_autolab_evaluator.utils import StoppableResource
 from dt_class_utils import DTProcess
 from duckietown_challenges.challenges_constants import ChallengesConstants
 
@@ -23,7 +21,7 @@ from aido_autolab_evaluator.constants import logger
 
 
 MAX_EXPERIMENT_DURATION = 60
-LOCALIZATION_PRECISION_MS = 50
+LOCALIZATION_PRECISION_MS = 200
 
 
 class AIDOAutolabEvaluatorPlainInterface(DTProcess):
@@ -254,6 +252,10 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
             logger.info('Downloading robot recordings...')
             evaluator.download_robots_logs()
             logger.info('Robot recordings downloaded!')
+            # clear robots log
+            logger.info('Deleting robot recordings...')
+            evaluator.clear_robots_logging()
+            logger.info('Robot recordings deleted!')
             # fetch localization results
             trajectories = experiment.results()
             trajectories = {

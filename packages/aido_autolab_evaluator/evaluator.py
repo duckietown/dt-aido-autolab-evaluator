@@ -268,6 +268,7 @@ class AIDOAutolabEvaluator(StoppableResource):
             recorder = robot.new_bag_recorder()
             worker = Thread(target=recorder.start)
             workers.append(worker)
+            self.register_shutdown_callback(recorder.shutdown)
             worker.start()
             self._job.robots_loggers.append(recorder)
         # wait for the requests to go out
@@ -317,6 +318,17 @@ class AIDOAutolabEvaluator(StoppableResource):
         for worker in workers:
             worker.join()
         logger.info("All robots recordings successfully downloaded!")
+
+    def clear_robots_logging(self):
+        workers = []
+        # send requests in parallel
+        for recorder in self._job.robots_loggers:
+            worker = Thread(target=recorder.delete_bag)
+            workers.append(worker)
+            worker.start()
+        # wait for the requests to go out
+        for worker in workers:
+            worker.join()
 
     def launch_solution(self):
         client = docker.from_env()
