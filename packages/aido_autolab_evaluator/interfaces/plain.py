@@ -368,13 +368,13 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
                        f"Logs:\n{logs}"
                 logger.info('Reporting FAILURE to the server.')
                 job.report(ChallengesConstants.STATUS_JOB_FAILED, logs)
-            elif decision == 'a':
+            elif decision == 'x':
                 # report ABORT status
                 logs = f"Operator message: '{message}'\n" \
                        f"Logs:\n{logs}"
                 logger.info('Reporting ABORT to the server.')
                 job.report(ChallengesConstants.STATUS_JOB_ABORTED, logs)
-            elif decision == 's':
+            elif decision == 'a':
                 # upload files
                 logger.info('Uploading results...')
                 evaluator.upload_results()
