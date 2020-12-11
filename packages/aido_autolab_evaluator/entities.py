@@ -242,13 +242,15 @@ class Autolab:
             return bots[:num]
         return bots
 
-    def new_localization_experiment(self, duration: int, precision_ms: int):
+    def new_localization_experiment(self, duration: int, precision_ms: int, log_fpath: str):
         # TODO: `hostname` should not be a constant, it should be just the name of the autolab,
         #  thus running on the town robot
+        # TODO: `log_fpath` should not be passed here, the localization API should keep it
+        #  and an API endpoint should allow us to download it
         hostname = AUTOLAB_LOCALIZATION_SERVER_HOSTNAME
         port = AUTOLAB_LOCALIZATION_SERVER_PORT
         experiments_api_url = f'{hostname}:{port}/experiment'
-        return LocalizationExperiment(experiments_api_url, duration, precision_ms)
+        return LocalizationExperiment(experiments_api_url, duration, precision_ms, log_fpath)
 
     @staticmethod
     def load(name: str):
@@ -308,18 +310,23 @@ class LocalizationExperimentStatus(IntEnum):
 
 class LocalizationExperiment:
 
-    def __init__(self, api_hostname: str, duration: int, precision_ms: int):
+    def __init__(self, api_hostname: str, duration: int, precision_ms: int, log_fpath: str):
         self._api_hostname = api_hostname
         self._duration = duration
         self._precision_ms = precision_ms
         res = _call_api(self._get_url('create', duration=duration, precision_ms=precision_ms))
         self._id = res['id']
+        res = _call_api(self._get_url('create', duration=duration, type='LoggerExperiment',
+                                      destination=log_fpath))
+        self._logger_id = res['id']
 
     def start(self):
         _call_api(self._get_url('start', self._id))
+        _call_api(self._get_url('start', self._logger_id))
 
     def stop(self):
         _call_api(self._get_url('stop', self._id))
+        _call_api(self._get_url('stop', self._logger_id))
 
     def status(self) -> LocalizationExperimentStatus:
         res = _call_api(self._get_url('status', self._id))

@@ -10,7 +10,7 @@ import matplotlib.image as mpimg
 import yaml
 
 from aido_autolab_evaluator import __version__
-from aido_autolab_evaluator.entities import LocalizationExperimentStatus
+from aido_autolab_evaluator.entities import LocalizationExperimentStatus, Autobot
 from aido_autolab_evaluator.utils import StoppableResource
 from dt_class_utils import DTProcess
 from duckietown_challenges.challenges_constants import ChallengesConstants
@@ -153,7 +153,7 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
             logger.info('Place the robots as shown in the image. '
                         'Press `q` when done to close the window.')
             # print the robot's color
-            for robot in job.robots.values():
+            for robot in job.get_robots(Autobot):
                 print(f'\t-Robot[{robot.color}]: \t{robot.name}')
             img = mpimg.imread(scenario.image_file)
             plt.imshow(img)
@@ -174,7 +174,8 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
             # create a localization experiment
             experiment = autolab.new_localization_experiment(
                 duration=MAX_EXPERIMENT_DURATION,
-                precision_ms=LOCALIZATION_PRECISION_MS
+                precision_ms=LOCALIZATION_PRECISION_MS,
+                log_fpath=os.path.join(job.storage_dir('output/'), 'lcm_localization.log')
             )
             # launch interrupt interactor
             interaction = Interaction(question="From this point on, press [ENTER] to interrupt",
@@ -555,5 +556,3 @@ class Interaction(Thread, StoppableResource):
 #         plt.subplots_adjust(left=0, bottom=0, right=0.99, top=0.99)
 #
 #         plt.show()
-#         # ---
-#         # rospy.signal_shutdown("done")
