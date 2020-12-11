@@ -183,57 +183,58 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
             interaction.start()
             # wait for solution to get healthy
             logger.info('Waiting for the solution to get healty (e.g., start publishing commands)')
-            evaluator.wait_for_solution_commands()
-            logger.info('The robots are ready to drive!')
-            # start recording bags
-            logger.info('Starting data recording on the robots...')
-            evaluator.start_robots_logging()
-            logger.info('Waiting 4 seconds for data recording to start...')
-            time.sleep(4)
-            # start localization experiment
-            logger.info('Starting localization experiment...')
-            experiment.start()
-            # enable robots' wheels
-            logger.info('Engaging robots...')
-            job.mark_start()
-            evaluator.engage_robots()
-            logger.info('Robots are go for launch!')
-            # ---
-            # monitor the solution
-            stime = time.time()
-            while True:
-                logger.info(f'Monitoring container ({int(time.time() - stime)}s) - '
-                            f'Press [ENTER] to interrupt at any time...')
-                try:
-                    job.solution_container.reload()
-                except docker.errors.NotFound:
-                    logger.warning('The solution container is gone. Not sure what happened to it.')
-                    break
-                if job.solution_container.status != 'running':
-                    logger.warning('The solution container stopped by itself.')
-                    break
-                if time.time() - stime > MAX_EXPERIMENT_DURATION:
-                    logger.info('Submission timed out. Stopping.')
-                    break
-                if job.status != ChallengesConstants.STATUS_JOB_EVALUATION:
-                    logger.info(f'Submission transitioned to state `{str(job.status)}`')
-                    break
-                if interaction.answer is not None:
-                    logger.warning("Operator interrupted the evaluation!")
-                    break
-                time.sleep(1)
-            # disengage robots
-            logger.info('Disengaging robots...')
-            job.mark_stop()
-            evaluator.disengage_robots(join=False)
-            logger.info('Robots should be stopped!')
-            # stop localization experiment
-            logger.info('Stopping localization experiment...')
-            if experiment.status() == LocalizationExperimentStatus.RUNNING:
-                experiment.stop()
-            # stop recording bags
-            logger.info('Stopping data recording on the robots...')
-            evaluator.stop_robots_logging()
+            evaluator.wait_for_solution_commands(interaction)
+            if interaction.answer is None:
+                logger.info('The robots are ready to drive!')
+                # start recording bags
+                logger.info('Starting data recording on the robots...')
+                evaluator.start_robots_logging()
+                logger.info('Waiting 4 seconds for data recording to start...')
+                time.sleep(4)
+                # start localization experiment
+                logger.info('Starting localization experiment...')
+                experiment.start()
+                # enable robots' wheels
+                logger.info('Engaging robots...')
+                job.mark_start()
+                evaluator.engage_robots()
+                logger.info('Robots are go for launch!')
+                # ---
+                # monitor the solution
+                stime = time.time()
+                while True:
+                    logger.info(f'Monitoring container ({int(time.time() - stime)}s) - '
+                                f'Press [ENTER] to interrupt at any time...')
+                    try:
+                        job.solution_container.reload()
+                    except docker.errors.NotFound:
+                        logger.warning('The solution container is gone. Not sure what happened to it.')
+                        break
+                    if job.solution_container.status != 'running':
+                        logger.warning('The solution container stopped by itself.')
+                        break
+                    if time.time() - stime > MAX_EXPERIMENT_DURATION:
+                        logger.info('Submission timed out. Stopping.')
+                        break
+                    if job.status != ChallengesConstants.STATUS_JOB_EVALUATION:
+                        logger.info(f'Submission transitioned to state `{str(job.status)}`')
+                        break
+                    if interaction.answer is not None:
+                        logger.warning("Operator interrupted the evaluation!")
+                        break
+                    time.sleep(1)
+                # disengage robots
+                logger.info('Disengaging robots...')
+                job.mark_stop()
+                evaluator.disengage_robots(join=False)
+                logger.info('Robots should be stopped!')
+                # stop localization experiment
+                logger.info('Stopping localization experiment...')
+                if experiment.status() == LocalizationExperimentStatus.RUNNING:
+                    experiment.stop()
+                # stop recording bags
+                logger.info('Stopping data recording on the robots...')
+                evaluator.stop_robots_logging()
             # stop containers
             logger.info('Stopping containers...')
             evaluator.clean_containers(remove=False)
@@ -291,7 +292,8 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
                 time.sleep(2)
             interaction.shutdown()
             # show the trajectory
-            render_trajectories(scenario.image_file, trajectories, job.robots)
+            # TODO: disabled because of issues with `tkinter`
+            # render_trajectories(scenario.image_file, trajectories, job.robots)
             # ask the operator how it did go
             exit_code = job.solution_container_monitor.exit_code
             good_exit_codes = [0, 137]

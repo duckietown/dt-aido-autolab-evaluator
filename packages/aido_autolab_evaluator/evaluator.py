@@ -375,7 +375,7 @@ class AIDOAutolabEvaluator(StoppableResource):
             self._job.solution_container = container
             self._job.solution_container_monitor = monitor
 
-    def wait_for_solution_commands(self):
+    def wait_for_solution_commands(self, interaction):
         workers = []
         for robot in self._job.get_robots(Autobot):
             autobot = cast(Autobot, robot)
@@ -384,7 +384,8 @@ class AIDOAutolabEvaluator(StoppableResource):
                 target=autobot.join,
                 one_shot=True,
                 # **kwargs
-                until=AutobotStatus(estop=True, moving=True)
+                until=AutobotStatus(estop=True, moving=True),
+                interaction=interaction
             )
             self.register_shutdown_callback(thread.shutdown)
             thread.start()

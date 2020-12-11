@@ -193,8 +193,10 @@ class Autobot(Robot):
         url = self._api_url('duckiebot', 'estop/off')
         _call_api(url)
 
-    def join(self, until: AutobotStatus):
+    def join(self, until: AutobotStatus, interaction=None):
         while True:
+            if interaction and interaction.answer is not None:
+                break
             if self.status.matches(until):
                 break
             time.sleep(1)
@@ -349,7 +351,6 @@ class LocalizationExperiment:
         if len(qs):
             qs = f'?{qs}'
         return f"http://{self._api_hostname}/{action}{args}{qs}"
-
 
 
 @dataclasses.dataclass
