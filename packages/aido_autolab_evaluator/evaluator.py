@@ -75,7 +75,7 @@ class AIDOAutolabEvaluator(StoppableResource):
     @property
     def features(self) -> dict:
         feats = get_features(
-            {**self._custom_features, **self._autolab.features},
+            {**self._autolab.features, **self._custom_features},
             use_ipfs=False
         )
         feats.update({'compute_sims': False})

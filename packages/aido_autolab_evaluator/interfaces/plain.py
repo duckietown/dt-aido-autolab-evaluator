@@ -2,7 +2,7 @@ import os
 import sys
 import time
 from threading import Thread
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 import docker
 import matplotlib.pyplot as plt
@@ -10,7 +10,7 @@ import matplotlib.image as mpimg
 import yaml
 
 from aido_autolab_evaluator import __version__
-from aido_autolab_evaluator.entities import LocalizationExperimentStatus, Autobot
+from aido_autolab_evaluator.entities import LocalizationExperimentStatus, Autobot, Robot
 from aido_autolab_evaluator.utils import StoppableResource
 from dt_class_utils import DTProcess
 from duckietown_challenges.challenges_constants import ChallengesConstants
@@ -21,7 +21,7 @@ from aido_autolab_evaluator.constants import logger
 
 
 MAX_EXPERIMENT_DURATION = 60
-LOCALIZATION_PRECISION_MS = 200
+LOCALIZATION_PRECISION_MS = 500
 
 
 class AIDOAutolabEvaluatorPlainInterface(DTProcess):
@@ -290,6 +290,8 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
                 print("Press [ENTER] to see the results...")
                 time.sleep(2)
             interaction.shutdown()
+            # show the trajectory
+            render_trajectories(scenario.image_file, trajectories, job.robots)
             # ask the operator how it did go
             exit_code = job.solution_container_monitor.exit_code
             good_exit_codes = [0, 137]
@@ -408,151 +410,37 @@ class Interaction(Thread, StoppableResource):
                     break
 
 
+def render_trajectories(map_fname: str, trajectories: Dict[str, List], robots: Dict[str, Robot]):
+    # constants
+    TILE_SIZE = 0.595
+    MAP_WIDTH = TILE_SIZE * 4
+    MAP_HEIGHT = TILE_SIZE * 5
+    MAP_BORDER_LR = 0.39
+    MAP_BORDER_TB = 0.33
 
+    positions = {
+        rname.split('/')[0]: [
+            [MAP_BORDER_LR + p['pose'][0][-1], MAP_BORDER_TB + p['pose'][1][-1]] for p in rtraj
+        ] for rname, rtraj in trajectories.items()
+    }
 
+    # draw map
+    if map_fname:
+        map_png = mpimg.imread(map_fname)
+        plt.imshow(map_png,
+                   extent=[0, MAP_WIDTH + 2 * MAP_BORDER_LR, 0, MAP_HEIGHT + 2 * MAP_BORDER_TB])
 
-# def render_trajectories():
-#     # constants
-#     MAP_NAME = "TTIC_large_loop"
-#     TILE_SIZE = 0.595
-#     MAP_WIDTH = TILE_SIZE * 4
-#     MAP_HEIGHT = TILE_SIZE * 5
-#
-#     def marker(frame_type: str) -> str:
-#         markers = {
-#             "world": "P",
-#             "autobot": "o",
-#             "tag/4": ".",
-#             "tag/3": "s",
-#             "watchtower": "h",
-#         }
-#         for prefix, mark in markers.items():
-#             if frame_type.startswith(prefix):
-#                 return mark
-#         return "x"
-#
-#     def color(frame_type: str) -> str:
-#         colors = {
-#             "world": "black",
-#             "autobot": "cornflowerblue",
-#             "tag/4": "slategrey",
-#             "tag/3": "red",
-#             "watchtower": "orange",
-#         }
-#         for prefix, mark in colors.items():
-#             if frame_type.startswith(prefix):
-#                 return mark
-#         return "green"
-#
-#     def nodelist(g, prefix: str):
-#         return [n for n in g if n.startswith(prefix)]
-#
-#     if __name__ == '__main__':
-#         if DEBUG:
-#             rospy.init_node('cslam-single-experiment-debug')
-#             br = tf2_ros.TransformBroadcaster()
-#
-#         # launch experiment manager
-#         manager.start("/autolab/tf", AutolabTransform)
-#
-#         # create experiment
-#         experiment = TimedLocalizationExperiment(
-#             manager, EXPERIMENT_DURATION, PRECISION_MSECS, TRACKABLES)
-#         experiment.start()
-#
-#         # join experiment
-#         logger.info(f'Waiting {EXPERIMENT_DURATION} seconds for observation to come in...')
-#         experiment.join()
-#
-#         # stop the manager
-#         manager.stop()
-#
-#         # wait for enough observations to come in
-#         logger.info(f'Experiment terminated. The graph has '
-#                     f'{experiment.graph.number_of_nodes()} nodes and '
-#                     f'{experiment.graph.number_of_edges()} edges.')
-#         # optimize
-#         logger.info('Optimizing...')
-#         experiment.optimize()
-#         logger.info('Done!')
-#
-#         # show graph
-#         G = experiment.graph
-#         print(f'Nodes: {G.number_of_nodes()}')
-#         print(f'Edges: {G.number_of_edges()}')
-#
-#         # pos = nx.spring_layout(G)
-#         pos = {}
-#
-#         for nname, ndata in G.nodes.data():
-#             pos[nname] = ndata["pose"].t[:2]
-#
-#         # print poses
-#         for nname, ndata in G.nodes.data():
-#             if ndata["type"] not in [AutolabReferenceFrame.TYPE_DUCKIEBOT_FOOTPRINT,
-#                                      AutolabReferenceFrame.TYPE_DUCKIEBOT_TAG]:
-#                 continue
-#             a = list(tf.transformations.euler_from_quaternion(ndata["pose"].q))
-#             print(f'Node[{nname}][{ndata["type"]}]:\n\t xyz: {ndata["pose"].t}\n\t rpw: {a}\n')
-#
-#             if DEBUG:
-#                 t = TransformStamped()
-#                 t.header.stamp = rospy.Time.now()
-#                 t.header.frame_id = "world"
-#                 t.child_frame_id = nname
-#                 p, q = ndata["pose"].t, ndata["pose"].q
-#                 t.transform = Transform(
-#                     translation=Vector3(p[0], p[1], p[2]),
-#                     rotation=Quaternion(x=q[0], y=q[1], z=q[2], w=q[3])
-#                 )
-#                 br.sendTransform(t)
-#
-#         links = defaultdict(set)
-#         for u, v, _ in G.edges:
-#             links[v].add(u)
-#
-#         # print('Edges:\n\t')
-#         # for tag, obss in links.items():
-#         #     print('\tTag {}:\n\t\t'.format(tag) + '\n\t\t'.join(obss))
-#         #     print()
-#
-#         # ==> This block places the nodes according to time
-#         # pos = {
-#         #     node: np.array([
-#         #         node_attr['time_ms'], 1 if node.startswith('watchtower') else 0
-#         #     ]) for node, node_attr in G.nodes.items()
-#         # }
-#         # min_time = min([v[0] for v in pos.values()])
-#         # pos = {n: p - [min_time, 0] for n, p in pos.items()}
-#         # <== This block places the nodes according to time
-#
-#         # draw map
-#         png_filename = f"{MAP_NAME}.png"
-#         png_filepath = os.path.join(os.environ.get("DT_REPO_PATH"), "assets", "maps", png_filename)
-#         map_png = pimage.imread(png_filepath)
-#         plt.imshow(
-#             map_png,
-#             origin='lower',
-#             extent=[0, MAP_WIDTH, 0, MAP_HEIGHT]
-#         )
-#
-#         for entity in ["world", "watchtower", "autobot", "tag/3"]:
-#             nx.draw_networkx_nodes(
-#                 G,
-#                 pos,
-#                 nodelist=nodelist(G, entity),
-#                 node_shape=marker(entity),
-#                 node_color=color(entity),
-#                 node_size=300
-#             )
-#
-#         edges = set()
-#         for edge in G.edges:
-#             edges.add((edge[0], edge[1]))
-#         nx.draw_networkx_edges(G, pos, edgelist=edges, edge_color='ivory')
-#
-#         plt.xlim(0, MAP_WIDTH)
-#         plt.ylim(0, MAP_HEIGHT)
-#         plt.subplots_adjust(left=0, bottom=0, right=0.99, top=0.99)
-#
-#         plt.show()
+    for robot in robots.values():
+        if robot.name not in positions:
+            print(f'No trajectory available for robot `{robot.name}`')
+            continue
+        for rposition in positions[robot.name]:
+            plt.plot(*rposition, marker='.', color=robot.color)
+
+    plt.text(5, 40, 'Final trajectories, press `q` to close.', fontsize=13, color='white')
+
+    plt.xlim(0, MAP_WIDTH + 2 * MAP_BORDER_LR)
+    plt.ylim(0, MAP_HEIGHT + 2 * MAP_BORDER_TB)
+    plt.subplots_adjust(left=0, bottom=0, right=0.99, top=0.99)
+
+    plt.show()

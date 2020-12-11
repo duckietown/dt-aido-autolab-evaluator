@@ -36,6 +36,8 @@ class EvaluationJob(StoppableResource):
             **info['parameters']['locations'][0])
         self._storage_path: str = Storage.dir(f'jobs/{self._job_id}/{self._step_name}')
         self._results_dir = os.path.join(self._storage_path, 'output')
+        logger.debug(f"[Job:{self._job_id}] - Working directory: `{self._storage_path}`")
+        logger.debug(f"[Job:{self._job_id}] - Artifacts directory: `{self._results_dir}`")
         if os.path.isdir(self._storage_path):
             logger.warning(f'Directory `{self._storage_path}` already exists. '
                            f'Perhaps this is not the first time we get assigned this job. '

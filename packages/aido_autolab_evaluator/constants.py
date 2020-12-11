@@ -72,10 +72,12 @@ AUTOLAB_LOCALIZATION_SERVER_PORT = 9091
 
 class Storage:
     AIDO_VERSION = None
+    STAGING = None
 
     @classmethod
-    def initialize(cls, aido_version: int):
+    def initialize(cls, aido_version: int, staging: bool):
         cls.AIDO_VERSION = aido_version
+        cls.STAGING = staging
         os.makedirs(cls._base_dir(), exist_ok=True)
 
     @classmethod
@@ -86,7 +88,8 @@ class Storage:
 
     @classmethod
     def _base_dir(cls) -> str:
-        return os.path.abspath(os.path.join(DATA_DIR, f'aido_{cls.AIDO_VERSION}'))
+        endpoint = 'stage' if cls.STAGING else 'official'
+        return os.path.abspath(os.path.join(DATA_DIR, f'aido_{cls.AIDO_VERSION}', endpoint))
 
 
 class ROSBagStatus(IntEnum):

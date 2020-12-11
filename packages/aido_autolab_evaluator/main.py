@@ -35,7 +35,7 @@ if __name__ == '__main__':
                         help='Duckietown Token of the Autolab operator')
     parser.add_argument('-a', '--autolab', type=str, required=True,
                         help='Name of the Autolab to use')
-    parser.add_argument('-f', '--feature', action='append', nargs=1, dest='features', default=[],
+    parser.add_argument('-f', '--feature', action='append', dest='features', default=[],
                         help='Features available to this Autolab')
     parser.add_argument('--stage', action='store_true', default=False,
                         help='Use staging server instead of the official one')
@@ -43,7 +43,7 @@ if __name__ == '__main__':
     parsed = parser.parse_args()
     features = _parse_features(parsed.features)
     # initialize storage space
-    Storage.initialize(parsed.aido)
+    Storage.initialize(parsed.aido, parsed.stage)
     # load autolab
     autolab = None
     try:
@@ -54,7 +54,7 @@ if __name__ == '__main__':
     if parsed.stage:
         os.environ['DTSERVER'] = 'https://challenges-stage.duckietown.org'
     # create an evaluator
-    evaluator = AIDOAutolabEvaluator(parsed.token, autolab)
+    evaluator = AIDOAutolabEvaluator(parsed.token, autolab, features)
     # attach an interface
     iface = AIDOAutolabEvaluatorPlainInterface(evaluator)
     iface.start()
