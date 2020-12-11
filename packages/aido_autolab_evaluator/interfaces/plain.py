@@ -107,8 +107,9 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
                         f'\n\t image_digest: {job.info["parameters"]["image_digest"]}')
             # ask the operator what to do
             interaction = Interaction(
-                question="What do you want to do? [a] Accept submission, [n] Get a new one ",
-                options=['a', 'n']
+                question="What do you want to do? [a] Accept submission, [n] Get a new one, "
+                         "[q] Quit: ",
+                options=['a', 'n', 'q']
             )
             interaction.start()
             # wait for the operator
@@ -118,6 +119,11 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
                 time.sleep(0.2)
             interaction.shutdown()
             decision = interaction.answer
+            if decision == 'q':
+                print('Sounds good, bye bye!')
+                evaluator.reset()
+                self.shutdown()
+                return
             if decision == 'n':
                 print('Sounds good, let\'s try again!')
                 evaluator.reset()
