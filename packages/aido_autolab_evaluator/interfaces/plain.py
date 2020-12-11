@@ -320,15 +320,6 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
             # render_trajectories()
             print('-' * 80)
 
-            # try:
-            #     while True:
-            #         x = input('::> ')
-            #         print('\nYou entered %r\n' % x)
-            # except KeyboardInterrupt:
-            #     print("\nInterrupted!")
-            #
-            # exit(0)
-
             # if the operator terminated the evaluator, do not enter the interactive part
             if self.is_shutdown():
                 return
@@ -342,9 +333,11 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
             # start interaction with the operator
             interaction = Interaction(
                 question="NOTE:   "
-                         "[s] All well;   [f] Participant's fault;    [a] Autolab/Operator's fault"
-                         "\nHow did it go? [s] Success, [f] Failure, [a] Abort: ",
-                options=['s', 'f', 'a']
+                         "\nWhat do we do with this?\n"
+                         "[a] Accept, "
+                         "[f] Failure (participant's fault), "
+                         "[x] Abort (lab's fault): ",
+                options=['a', 'f', 'x']
             )
             interaction.start()
             # wait for the operator
