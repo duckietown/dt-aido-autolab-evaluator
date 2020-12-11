@@ -347,7 +347,6 @@ class AIDOAutolabEvaluator(StoppableResource):
                     'AIDONODE_DATA_IN': f'/fifos/{robot.remote_name}-in',
                     'AIDONODE_DATA_OUT': f'fifo:/fifos/{robot.remote_name}-out'
                 },
-                'network_mode': 'host',
                 'volumes': {
                     '/var/run/avahi-daemon/socket': {
                         'bind': '/var/run/avahi-daemon/socket',

@@ -1,6 +1,7 @@
 import io
 import os
 import abc
+import tarfile
 import time
 import json
 from enum import IntEnum
@@ -151,10 +152,10 @@ class Robot(Entity, abc.ABC):
 
     def download_robot_config(self, destination: str):
         os.makedirs(destination, exist_ok=True)
-        _config_zipped_url = self._api_url('files', 'config?format=zip')
-        zip_binary = requests.get(_config_zipped_url).content
-        zf = zipfile.ZipFile(io.BytesIO(zip_binary), "r")
-        zf.extractall(destination)
+        _config_zipped_url = self._api_url('files', 'config?format=tar')
+        tar_binary = requests.get(_config_zipped_url).content
+        tarf = tarfile.open(fileobj=io.BytesIO(tar_binary))
+        tarf.extractall(destination)
 
     def _api_url(self, api: str, resource: str) -> str:
         return f"http://{self.hostname}/{api}/{resource}"
