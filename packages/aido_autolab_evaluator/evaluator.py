@@ -356,6 +356,10 @@ class AIDOAutolabEvaluator(StoppableResource):
                     self._job.storage_dir('fifos'): {
                         'bind': '/fifos',
                         'mode': 'rw'
+                    },
+                    self._job.storage_dir(f'output/robots/{robot.remote_name}/config'): {
+                        'bind': '/data/config',
+                        'mode': 'rw'
                     }
                 },
                 'auto_remove': False,
