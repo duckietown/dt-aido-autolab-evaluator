@@ -66,13 +66,55 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
         print('-' * 80)
         polling = False
         while not self.is_shutdown():
-            if not polling:
-                print(f'AIDO Autolab Evaluator (v.{__version__})')
-                print(f'- Autolab Operator #{evaluator.operator.uid}')
-                # start interaction with the operator
+            if self._evaluator.job is None:
+                if not polling:
+                    print(f'AIDO Autolab Evaluator (v.{__version__})')
+                    print(f'- Autolab Operator #{evaluator.operator.uid}')
+                    # start interaction with the operator
+                    interaction = Interaction(
+                        question="What do you want to do? [a] Accept new submissions, [q] Quit: ",
+                        options=['a', 'q']
+                    )
+                    interaction.start()
+                    # wait for the operator
+                    while not self.is_shutdown():
+                        if interaction.answer is not None:
+                            break
+                        time.sleep(0.2)
+                    interaction.shutdown()
+                    decision = interaction.answer
+                    if decision == 'q':
+                        print('Sounds good, bye bye!')
+                        evaluator.reset()
+                        self.shutdown()
+                        return
+                    # ---
+
+                logger.info('Querying server for submission...')
+                polling = True
+                evaluator.take_submission()
+                # check if we got a job
+                if evaluator.job is None:
+                    logger.info('No job received from the challenges server. Retrying in 2 seconds.')
+                    sleep(2)
+                    continue
+                # got a job, print some info
+                job = evaluator.job
+                logger.info(f'\nJob received!'
+                            f'\nJob info:'
+                            f'\n\t challenge_name: {job.info["challenge_name"]}'
+                            f'\n\t challenge_id: {job.info["challenge_id"]}'
+                            f'\n\t job_id: {job.id}'
+                            f'\n\t step_name: {job.info["step_name"]}'
+                            f'\n\t submission_id: {job.info["submission_id"]}'
+                            f'\n\t submitter_name: {job.info["submitter_name"]}'
+                            f'\n\t protocol: {job.info["protocol"]}'
+                            f'\n\t image_digest: {job.info["parameters"]["image_digest"]}')
+                # ask the operator what to do
                 interaction = Interaction(
-                    question="What do you want to do? [a] Accept new submissions, [q] Quit: ",
-                    options=['a', 'q']
+                    question="What do you want to do? [a] Accept submission, [n] Get a new one, "
+                             "[q] Quit: ",
+                    options=['a', 'n', 'q']
                 )
                 interaction.start()
                 # wait for the operator
@@ -87,65 +129,26 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
                     evaluator.reset()
                     self.shutdown()
                     return
+                if decision == 'n':
+                    print('Sounds good, let\'s try again!')
+                    evaluator.reset()
+                    continue
+                polling = False
                 # ---
-
-            logger.info('Querying server for submission...')
-            polling = True
-            evaluator.take_submission()
-            # check if we got a job
-            if evaluator.job is None:
-                logger.info('No job received from the challenges server. Retrying in 2 seconds.')
-                sleep(2)
-                continue
-            # got a job, print some info
-            job = evaluator.job
-            logger.info(f'\nJob received!'
-                        f'\nJob info:'
-                        f'\n\t challenge_name: {job.info["challenge_name"]}'
-                        f'\n\t challenge_id: {job.info["challenge_id"]}'
-                        f'\n\t job_id: {job.id}'
-                        f'\n\t step_name: {job.info["step_name"]}'
-                        f'\n\t submission_id: {job.info["submission_id"]}'
-                        f'\n\t submitter_name: {job.info["submitter_name"]}'
-                        f'\n\t protocol: {job.info["protocol"]}'
-                        f'\n\t image_digest: {job.info["parameters"]["image_digest"]}')
-            # ask the operator what to do
-            interaction = Interaction(
-                question="What do you want to do? [a] Accept submission, [n] Get a new one, "
-                         "[q] Quit: ",
-                options=['a', 'n', 'q']
-            )
-            interaction.start()
-            # wait for the operator
-            while not self.is_shutdown():
-                if interaction.answer is not None:
-                    break
-                time.sleep(0.2)
-            interaction.shutdown()
-            decision = interaction.answer
-            if decision == 'q':
-                print('Sounds good, bye bye!')
-                evaluator.reset()
-                self.shutdown()
-                return
-            if decision == 'n':
-                print('Sounds good, let\'s try again!')
-                evaluator.reset()
-                continue
-            polling = False
-            # ---
-            # download scenario
-            logger.info('Downloading scenario...')
-            evaluator.download_scenario()
-            logger.info('Scenario downloaded!')
-            # assign robots to job
-            logger.info('Assigning robots to job...')
-            evaluator.assign_robots()
-            logger.info('Robots correctly assigned!')
-            # download robot configurations
-            logger.info('Downloading robot configuration...')
-            evaluator.download_robots_configuration()
-            logger.info('Robot configuration downloaded!')
+                # download scenario
+                logger.info('Downloading scenario...')
+                evaluator.download_scenario()
+                logger.info('Scenario downloaded!')
+                # assign robots to job
+                logger.info('Assigning robots to job...')
+                evaluator.assign_robots()
+                logger.info('Robots correctly assigned!')
+                # download robot configurations
+                logger.info('Downloading robot configuration...')
+                evaluator.download_robots_configuration()
+                logger.info('Robot configuration downloaded!')
+            else:
+                job = evaluator.job
             # reset solution environment
             logger.info('Cleaning containers...')
             evaluator.clean_containers()
@@ -218,7 +221,7 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
                     try:
                         job.solution_container.reload()
                     except docker.errors.NotFound:
-                        logger.warning('The solution container is gone. Not sure what happened to it.')
+                        logger.warning('The solution container is gone. Not sure what happened.')
                         break
                     if job.solution_container.status != 'running':
                         logger.warning('The solution container stopped by itself.')
@@ -259,10 +262,36 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
             # remove containers
             evaluator.clean_containers(remove=True)
             # wait for localization experiment to post-process
-            logger.info('Post-processing localization experiment...')
-            # TODO: we need to handle the ERROR state
-            experiment.join(until=LocalizationExperimentStatus.FINISHED)
-            logger.info('Localization experiment completed!')
+            if experiment.status() == LocalizationExperimentStatus.CREATED:
+                trajectories = {}
+            else:
+                logger.info('Post-processing localization experiment...')
+                # TODO: we need to handle the ERROR state
+                experiment.join(until=LocalizationExperimentStatus.FINISHED)
+                logger.info('Localization experiment completed!')
+                # fetch localization results
+                trajectories = experiment.results()
+                trajectories = {
+                    k.split('/')[0]: v for k, v in trajectories.items()
+                }
+                for robot_name, robot_trajectory in trajectories.items():
+                    # exclude robots outside this autolab
+                    if robot_name not in autolab.robots:
+                        logger.warning('The localization report contained the trajectory of a '
+                                       'robot outside this Autolab. Ignoring it.')
+                        continue
+                    # exclude robots not assigned to this job
+                    if robot_name not in job.robots:
+                        continue
+                    robot = autolab.robots[robot_name]
+                    # TODO: ==> this should be rectified in AIDO6, use `duckiebot` instead of `robots`
+                    rcat = {'duckiebot': 'robots', 'watchtower': 'watchtowers'}[robot.type]
+                    # TODO: <== this should be rectified in AIDO6, use `duckiebot` instead of `robots`
+                    robot_fpath = job.storage_dir(f'output/{rcat}/{robot.remote_name}')
+                    traj_fpath = os.path.join(robot_fpath, 'trajectory.yaml')
+                    logger.debug(f'Writing trajectory for robot `{robot_name}` to `{traj_fpath}`.')
+                    with open(traj_fpath, 'wt') as fout:
+                        yaml.safe_dump(robot_trajectory, fout)
             # download robot recordings
             logger.info('Downloading robot recordings...')
             evaluator.download_robots_logs()
@@ -271,29 +300,6 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
             logger.info('Deleting robot recordings...')
             evaluator.clear_robots_logging()
             logger.info('Robot recordings deleted!')
-            # fetch localization results
-            trajectories = experiment.results()
-            trajectories = {
-                k.split('/')[0]: v for k, v in trajectories.items()
-            }
-            for robot_name, robot_trajectory in trajectories.items():
-                # exclude robots outside this autolab
-                if robot_name not in autolab.robots:
-                    logger.warning('The localization report contained the trajectory of a '
-                                   'robot outside this Autolab. Ignoring it.')
-                    continue
-                # exclude robots not assigned to this job
-                if robot_name not in job.robots:
-                    continue
-                robot = autolab.robots[robot_name]
-                # TODO: ==> this should be rectified in AIDO6, use `duckiebot` instead of `robots`
-                rcat = {'duckiebot': 'robots', 'watchtower': 'watchtowers'}[robot.type]
-                # TODO: <== this should be rectified in AIDO6, use `duckiebot` instead of `robots`
-                robot_fpath = job.storage_dir(f'output/{rcat}/{robot.remote_name}')
-                traj_fpath = os.path.join(robot_fpath, 'trajectory.yaml')
-                logger.debug(f'Writing trajectory for robot `{robot_name}` to `{traj_fpath}`.')
-                with open(traj_fpath, 'wt') as fout:
-                    yaml.safe_dump(robot_trajectory, fout)
             # conclude interaction
             while not self.is_shutdown():
                 if interaction.answer is not None:
@@ -301,27 +307,27 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
                 print("Press [ENTER] to see the results...")
                 time.sleep(2)
             interaction.shutdown()
-            # show the trajectory
-            # TODO: disabled because of issues with `tkinter`
-            # render_trajectories(scenario.image_file, trajectories, job.robots)
             # ask the operator how it did go
             exit_code = job.solution_container_monitor.exit_code
             good_exit_codes = [0, 137]
             # collect evidence
             print('-' * 80)
-            duration = int(job.end_time - job.start_time)
             traj_str = '\n\t\t'.join([f"- {k.split('/')[0]}: {len(v)} points"
                                       for k, v in trajectories.items()]) \
                        if len(trajectories) else '(none)'
             solution_code_status = 'Worked' if exit_code in good_exit_codes else 'Failed'
             logger.info('Experiment completed:\n'
                         'Facts:\n'
-                        f'\tDuration: {duration} secs\n'
+                        f'\tJob ID: {job.id}\n'
+                        f'\tStep name: {job.info["step_name"]}\n'
+                        f'\tSubmission ID: {job.info["submission_id"]}\n'
+                        f'\tDuration: {job.duration} secs\n'
                         f'\tTrajectories:\n'
                         f'\t\t{traj_str}\n'
                         f'\tSolution code: {solution_code_status}')
-            # TODO
-            # render_trajectories()
+            # show the trajectory
+            if len(trajectories):
+                render_trajectories(scenario.image_file, trajectories, job.robots)
             print('-' * 80)
 
             # if the operator terminated the evaluator, do not enter the interactive part
@@ -339,9 +345,10 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
                 question="NOTE:   "
                          "\nWhat do we do with this?\n"
                          "[a] Accept, "
+                         "[r] Retry "
                          "[f] Failure (participant's fault), "
                          "[x] Abort (lab's fault): ",
-                options=['a', 'f', 'x']
+                options=['a', 'r', 'f', 'x']
             )
             interaction.start()
             # wait for the operator
@@ -352,18 +359,20 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
             interaction.shutdown()
             decision = interaction.answer
 
-            # start (another) interaction with the operator
-            interaction = Interaction(
-                question="Do you have a message for the server?: "
-            )
-            interaction.start()
-            # wait for the operator
-            while not self.is_shutdown():
-                if interaction.answer is not None:
-                    break
-                time.sleep(0.2)
-            interaction.shutdown()
-            message = interaction.answer
+            message = "ND"
+            if interaction.answer in ['a', 'f']:
+                # start (another) interaction with the operator
+                interaction = Interaction(
+                    question="Do you have a message for the server?: "
+                )
+                interaction.start()
+                # wait for the operator
+                while not self.is_shutdown():
+                    if interaction.answer is not None:
+                        break
+                    time.sleep(0.2)
+                interaction.shutdown()
+                message = interaction.answer
 
             # parse interaction result
             if decision == 'f':
@@ -374,10 +383,12 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
                 job.report(ChallengesConstants.STATUS_JOB_FAILED, logs)
             elif decision == 'x':
                 # report ABORT status
-                logs = f"Operator message: '{message}'\n" \
-                       f"Logs:\n{logs}"
                 logger.info('Reporting ABORT to the server.')
                 job.report(ChallengesConstants.STATUS_JOB_ABORTED, logs)
+            elif decision == 'r':
+                # retry same submission
+                job.nuke_artifacts()
+                continue
             elif decision == 'a':
                 # upload files
                 logger.info('Uploading results...')

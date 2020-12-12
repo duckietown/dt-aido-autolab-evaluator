@@ -25,7 +25,8 @@ chlogger.setLevel(logging.DEBUG)
 
 class AIDOAutolabEvaluator(StoppableResource):
 
-    def __init__(self, token: str, autolab: Autolab, features: dict = None):
+    def __init__(self, token: str, autolab: Autolab, features: Optional[dict] = None,
+                 name: Optional[str] = None):
         super().__init__()
         # parse args
         if features is None:
@@ -37,7 +38,7 @@ class AIDOAutolabEvaluator(StoppableResource):
         self._token: str = token
         self._autolab = autolab
         self._job: Optional[EvaluationJob] = None
-        self._machine_id: str = socket.gethostname()
+        self._machine_id: str = socket.gethostname() if name is None else name
         self._process_id: str = str(os.getpid())
         self._impersonate: Optional[UserID] = None
         # launch heartbeat to keep the job assignation active
@@ -363,7 +364,18 @@ class AIDOAutolabEvaluator(StoppableResource):
                 },
                 'auto_remove': False,
                 'remove': False,
-                'detach': True
+                'detach': True,
+                **({
+                    'device_requests': [
+                        docker.types.DeviceRequest(
+                            Driver='nvidia',
+                            Count=1, Capabilities=[
+                                ['gpu'], ['nvidia'], ['compute']
+                            ]
+                        )
+                    ],
+                    'runtime': 'nvidia'
+                } if self.features['gpu'] else {})
             }
             logger.debug(f'Running "solution" container `{container_name}` with configuration:\n'
                          f'{pretty_print(container_cfg)}')

@@ -131,6 +131,11 @@ class EvaluationJob(StoppableResource):
     def robots_loggers(self):
         return self._robots_loggers
 
+    @property
+    def duration(self):
+        return (self._end_time - self._start_time) \
+            if (self._start_time is not None and self._end_time is not None) else 0
+
     def mark_start(self):
         self._start_time = time.time()
 
@@ -249,3 +254,6 @@ class EvaluationJob(StoppableResource):
         self._done = True
         # ---
         return report_res
+
+    def nuke_artifacts(self):
+        shutil.rmtree(self._results_dir)
