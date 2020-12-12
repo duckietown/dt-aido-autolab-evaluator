@@ -5,6 +5,10 @@ from threading import Thread
 from typing import List, Optional, Dict
 
 import docker
+import matplotlib
+
+matplotlib.use('GTK3Agg')
+
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import yaml
