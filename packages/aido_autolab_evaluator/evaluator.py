@@ -343,16 +343,11 @@ class AIDOAutolabEvaluator(StoppableResource):
                 'name': container_name,
                 'image': self._job.solution_image,
                 'environment': {
-                    'VEHICLE_NAME': robot.name,
                     'ROBOT_TYPE': robot.type,
                     'AIDONODE_DATA_IN': f'/fifos/{robot.remote_name}-in',
                     'AIDONODE_DATA_OUT': f'fifo:/fifos/{robot.remote_name}-out'
                 },
                 'volumes': {
-                    '/var/run/avahi-daemon/socket': {
-                        'bind': '/var/run/avahi-daemon/socket',
-                        'mode': 'rw'
-                    },
                     self._job.storage_dir('fifos'): {
                         'bind': '/fifos',
                         'mode': 'rw'
