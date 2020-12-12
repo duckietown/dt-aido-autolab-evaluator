@@ -12,3 +12,7 @@ requests
 docker
 pillow
 zipfile38
+
+# matplotlib GTK backend
+PyGObject
+pycairo>=1.11.0
