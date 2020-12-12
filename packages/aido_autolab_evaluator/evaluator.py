@@ -343,6 +343,7 @@ class AIDOAutolabEvaluator(StoppableResource):
                 'name': container_name,
                 'image': self._job.solution_image,
                 'environment': {
+                    'VEHICLE_NAME': robot.name,
                     'ROBOT_TYPE': robot.type,
                     'AIDONODE_DATA_IN': f'/fifos/{robot.remote_name}-in',
                     'AIDONODE_DATA_OUT': f'fifo:/fifos/{robot.remote_name}-out'
