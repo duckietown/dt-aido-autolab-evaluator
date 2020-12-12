@@ -362,6 +362,7 @@ class AIDOAutolabEvaluator(StoppableResource):
                         'mode': 'rw'
                     }
                 },
+                'user': 0,
                 'auto_remove': False,
                 'remove': False,
                 'detach': True,
