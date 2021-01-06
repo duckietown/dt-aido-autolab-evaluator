@@ -8,7 +8,6 @@ duckietown-challenges-daffy
 duckietown-challenges-runner-daffy
 
 # utilities
-requests
 docker
 pillow
 zipfile38
