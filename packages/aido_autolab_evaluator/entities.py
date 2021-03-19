@@ -47,7 +47,7 @@ class ROSBag(Entity):
 
     @property
     def url(self):
-        return f'http://{self.robot}.local/files/logs/bag/{self.name}.bag'
+        return f'http://{self.robot}.local/files/data/logs/bag/{self.name}.bag'
 
     def download(self, destination: str):
         destination = os.path.abspath(destination)
