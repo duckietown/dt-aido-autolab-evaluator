@@ -152,13 +152,13 @@ class Robot(Entity, abc.ABC):
 
     def download_robot_config(self, destination: str):
         os.makedirs(destination, exist_ok=True)
-        _config_zipped_url = self._api_url('files', 'config?format=tar')
+        _config_zipped_url = self._api_url('files', 'data', 'config?format=tar')
         tar_binary = requests.get(_config_zipped_url).content
         tarf = tarfile.open(fileobj=io.BytesIO(tar_binary))
         tarf.extractall(destination)
 
-    def _api_url(self, api: str, resource: str) -> str:
-        return f"http://{self.hostname}/{api}/{resource}"
+    def _api_url(self, api: str, action: str, resource: str) -> str:
+        return f"http://{self.hostname}/{api}/{action}/{resource}"
 
 
 @dataclasses.dataclass
@@ -175,22 +175,22 @@ class Autobot(Robot):
     @property
     def status(self) -> AutobotStatus:
         # get estop status
-        url = self._api_url('duckiebot', 'estop/status')
+        url = self._api_url('duckiebot', 'estop', 'status')
         data = _call_api(url)
         estop = data['engaged']
         # get motion status
-        url = self._api_url('duckiebot', 'car/status')
+        url = self._api_url('duckiebot', 'car', 'status')
         data = _call_api(url)
         moving = data['engaged']
         # ---
         return AutobotStatus(estop=estop, moving=moving)
 
     def stop(self):
-        url = self._api_url('duckiebot', 'estop/on')
+        url = self._api_url('duckiebot', 'estop', 'on')
         _call_api(url)
 
     def go(self):
-        url = self._api_url('duckiebot', 'estop/off')
+        url = self._api_url('duckiebot', 'estop', 'off')
         _call_api(url)
 
     def join(self, until: AutobotStatus, interaction=None):
