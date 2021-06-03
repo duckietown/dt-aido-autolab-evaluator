@@ -37,6 +37,7 @@ class Entity:
 class ROSBag(Entity):
     robot: str
     name: str
+    local: str
     _is_shutdown: bool = False
 
     @property
@@ -47,7 +48,7 @@ class ROSBag(Entity):
 
     @property
     def url(self):
-        return f'http://{self.robot}.local/files/data/logs/bag/{self.name}.bag'
+        return f'http://{self.robot}.local/files{self.local}'
 
     def download(self, destination: str):
         destination = os.path.abspath(destination)
@@ -67,6 +68,7 @@ class ROSBag(Entity):
 @dataclasses.dataclass
 class ROSBagRecorder(Entity):
     robot: 'Robot'
+    experiment: str
     bag: ROSBag = None
     _is_shutdown: bool = False
 
@@ -80,10 +82,11 @@ class ROSBagRecorder(Entity):
 
     def _do_record(self):
         data = {'topics': ':'.join(self.robot.topics).lstrip('/')}
-        api_url = self._get_url('ros', 'bag', 'record', 'start')
+        api_url = self._get_url('ros', 'bag', 'record', 'start', self.experiment)
         res = _call_api(api_url, method='POST', data=data)
-        logger.debug(f"Robot `{self.robot.name}` is recording bag `{res['name']}`...")
-        self.bag = ROSBag(self.robot.name, res['name'])
+        logger.debug(f"Robot `{self.robot.name}` is recording bag `{res['name']}` "
+                     f"for experiment `{self.experiment}`...")
+        self.bag = ROSBag(self.robot.name, res['name'], res['local'])
 
     def start(self):
         self._do_record()
@@ -144,8 +147,8 @@ class Robot(Entity, abc.ABC):
     def status(self) -> str:
         return f"{self.name}.local"
 
-    def new_bag_recorder(self) -> ROSBagRecorder:
-        return ROSBagRecorder(self)
+    def new_bag_recorder(self, experiment: str) -> ROSBagRecorder:
+        return ROSBagRecorder(self, experiment)
 
     def is_a(self, cls) -> bool:
         return isinstance(self, cls)
