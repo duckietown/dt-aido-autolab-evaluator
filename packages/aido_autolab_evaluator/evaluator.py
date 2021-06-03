@@ -10,7 +10,7 @@ from typing import Optional, cast
 
 from duckietown_challenges import dtserver_job_heartbeat, dtserver_work_submission, logger as chlogger
 from duckietown_challenges.challenges_constants import ChallengesConstants
-from duckietown_challenges.types import UserID, JobStatusString
+from duckietown_challenges.types import UserID, JobStatusString, SubmissionID
 from duckietown_challenges_runner import __version__
 from duckietown_challenges_runner.runner import get_features
 
@@ -26,7 +26,7 @@ chlogger.setLevel(logging.DEBUG)
 class AIDOAutolabEvaluator(StoppableResource):
 
     def __init__(self, token: str, autolab: Autolab, features: Optional[dict] = None,
-                 name: Optional[str] = None):
+                 name: Optional[str] = None, submission_id: Optional[SubmissionID] = None):
         super().__init__()
         # parse args
         if features is None:
@@ -41,6 +41,7 @@ class AIDOAutolabEvaluator(StoppableResource):
         self._machine_id: str = socket.gethostname() if name is None else name
         self._process_id: str = str(os.getpid())
         self._impersonate: Optional[UserID] = None
+        self._submission_id: Optional[SubmissionID] = submission_id
         # launch heartbeat to keep the job assignation active
         self._heart = AIDOAutolabEvaluatorHeartBeat(self)
         self._heart.start()
@@ -107,7 +108,7 @@ class AIDOAutolabEvaluator(StoppableResource):
     def take_submission(self):
         res = dtserver_work_submission(
             token=self.token,
-            submission_id=None,
+            submission_id=self._submission_id,
             machine_id=self.machine_id,
             process_id=self.process_id,
             evaluator_version=self.version,
