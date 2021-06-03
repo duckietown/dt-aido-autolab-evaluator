@@ -41,6 +41,8 @@ if __name__ == '__main__':
                         help='Features available to this Autolab')
     parser.add_argument('--stage', action='store_true', default=False,
                         help='Use staging server instead of the official one')
+    parser.add_argument('--submissionid', type=int, default=None,
+                        help='The ID of a specific submission to evaluate')
     # parse args
     parsed = parser.parse_args()
     features = _parse_features(parsed.features)
@@ -56,7 +58,7 @@ if __name__ == '__main__':
     if parsed.stage:
         os.environ['DTSERVER'] = 'https://challenges-stage.duckietown.org'
     # create an evaluator
-    evaluator = AIDOAutolabEvaluator(parsed.token, autolab, features, name=parsed.id)
+    evaluator = AIDOAutolabEvaluator(parsed.token, autolab, features, name=parsed.id, submission_id=parsed.submissionid)
     # attach an interface
     iface = AIDOAutolabEvaluatorPlainInterface(evaluator)
     iface.start()
