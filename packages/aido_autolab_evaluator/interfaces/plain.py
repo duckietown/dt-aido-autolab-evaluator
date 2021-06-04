@@ -431,12 +431,12 @@ def render_trajectories(map_fname: str, trajectories: Dict[str, List], robots: D
     TILE_SIZE = 0.595
     MAP_WIDTH = TILE_SIZE * 4
     MAP_HEIGHT = TILE_SIZE * 5
-    MAP_BORDER_LR = 0.39
-    MAP_BORDER_TB = 0.33
+    MAP_BORDER_LEFT = 0.39
+    MAP_BORDER_BOTTOM = 0.09
 
     positions = {
         rname.split('/')[0]: [
-            [MAP_BORDER_LR + p['pose'][0][-1], MAP_BORDER_TB + p['pose'][1][-1]] for p in rtraj
+            [MAP_BORDER_LEFT + p['pose'][0][-1], MAP_BORDER_BOTTOM + p['pose'][1][-1]] for p in rtraj
         ] for rname, rtraj in trajectories.items()
     }
 
@@ -444,7 +444,7 @@ def render_trajectories(map_fname: str, trajectories: Dict[str, List], robots: D
     if map_fname:
         map_png = mpimg.imread(map_fname)
         plt.imshow(map_png,
-                   extent=[0, MAP_WIDTH + 2 * MAP_BORDER_LR, 0, MAP_HEIGHT + 2 * MAP_BORDER_TB])
+                   extent=[0, MAP_WIDTH + 2 * MAP_BORDER_LEFT, 0, MAP_HEIGHT + 2 * MAP_BORDER_BOTTOM])
 
     for robot in robots.values():
         if robot.name not in positions:
@@ -455,8 +455,8 @@ def render_trajectories(map_fname: str, trajectories: Dict[str, List], robots: D
 
     plt.text(5, 40, 'Final trajectories, press `q` to close.', fontsize=13, color='white')
 
-    plt.xlim(0, MAP_WIDTH + 2 * MAP_BORDER_LR)
-    plt.ylim(0, MAP_HEIGHT + 2 * MAP_BORDER_TB)
+    plt.xlim(0, MAP_WIDTH + 2 * MAP_BORDER_LEFT)
+    plt.ylim(0, MAP_HEIGHT + 2 * MAP_BORDER_BOTTOM)
     plt.subplots_adjust(left=0, bottom=0, right=0.99, top=0.99)
 
     plt.show()
