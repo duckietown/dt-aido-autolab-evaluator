@@ -361,6 +361,7 @@ class Scenario:
     environment: Dict
     player_robots: List[str]
     image_file: str
+    payload_yaml: Optional[str] = "{}"
 
 
 def _call_api(url: str, method: str = 'GET', **kwargs) -> dict:
