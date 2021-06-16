@@ -14,7 +14,7 @@ import matplotlib.image as mpimg
 import yaml
 
 from aido_autolab_evaluator import __version__
-from aido_autolab_evaluator.entities import LocalizationExperimentStatus, Autobot, Robot
+from aido_autolab_evaluator.entities import LocalizationExperimentStatus, Autobot, Robot, Scenario
 from aido_autolab_evaluator.utils import StoppableResource
 from dt_class_utils import DTProcess
 from duckietown_challenges.challenges_constants import ChallengesConstants
@@ -327,7 +327,7 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
                         f'\tSolution code: {solution_code_status}')
             # show the trajectory
             if len(trajectories):
-                render_trajectories(scenario.image_file, trajectories, job.robots)
+                render_trajectories(scenario, trajectories, job.robots)
             print('-' * 80)
 
             # if the operator terminated the evaluator, do not enter the interactive part
@@ -426,11 +426,12 @@ class Interaction(Thread, StoppableResource):
                     break
 
 
-def render_trajectories(map_fname: str, trajectories: Dict[str, List], robots: Dict[str, Robot]):
+def render_trajectories(scenario: Scenario, trajectories: Dict[str, List], robots: Dict[str, Robot]):
+    map_fname = scenario.image_file
     # constants
-    TILE_SIZE = 0.595
-    MAP_WIDTH = TILE_SIZE * 4
-    MAP_HEIGHT = TILE_SIZE * 5
+    TILE_SIZE = scenario.environment.get("tile_size", 0.545)
+    MAP_WIDTH = TILE_SIZE * len(scenario.environment.get("tiles"))
+    MAP_HEIGHT = TILE_SIZE * len(scenario.environment.get("tiles")[0])
     MAP_BORDER_LEFT = 0.39
     MAP_BORDER_BOTTOM = 0.09
 
