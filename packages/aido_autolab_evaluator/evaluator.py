@@ -267,7 +267,7 @@ class AIDOAutolabEvaluator(StoppableResource):
         workers = []
         # send requests in parallel
         for robot in self._job.get_robots([Autobot, Watchtower]):
-            recorder = robot.new_bag_recorder()
+            recorder = robot.new_bag_recorder(str(self._job.id))
             worker = Thread(target=recorder.start)
             workers.append(worker)
             self.register_shutdown_callback(recorder.shutdown)
@@ -349,10 +349,6 @@ class AIDOAutolabEvaluator(StoppableResource):
                     'AIDONODE_DATA_OUT': f'fifo:/fifos/{robot.remote_name}-out'
                 },
                 'volumes': {
-                    '/var/run/avahi-daemon/socket': {
-                        'bind': '/var/run/avahi-daemon/socket',
-                        'mode': 'rw'
-                    },
                     self._job.storage_dir('fifos'): {
                         'bind': '/fifos',
                         'mode': 'rw'

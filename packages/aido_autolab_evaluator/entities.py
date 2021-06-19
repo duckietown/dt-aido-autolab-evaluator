@@ -37,6 +37,7 @@ class Entity:
 class ROSBag(Entity):
     robot: str
     name: str
+    local: str
     _is_shutdown: bool = False
 
     @property
@@ -47,7 +48,7 @@ class ROSBag(Entity):
 
     @property
     def url(self):
-        return f'http://{self.robot}.local/files/logs/bag/{self.name}.bag'
+        return f'http://{self.robot}.local/files{self.local}'
 
     def download(self, destination: str):
         destination = os.path.abspath(destination)
@@ -67,6 +68,7 @@ class ROSBag(Entity):
 @dataclasses.dataclass
 class ROSBagRecorder(Entity):
     robot: 'Robot'
+    experiment: str
     bag: ROSBag = None
     _is_shutdown: bool = False
 
@@ -80,10 +82,11 @@ class ROSBagRecorder(Entity):
 
     def _do_record(self):
         data = {'topics': ':'.join(self.robot.topics).lstrip('/')}
-        api_url = self._get_url('ros', 'bag', 'record', 'start')
+        api_url = self._get_url('ros', 'bag', 'record', 'start', self.experiment)
         res = _call_api(api_url, method='POST', data=data)
-        logger.debug(f"Robot `{self.robot.name}` is recording bag `{res['name']}`...")
-        self.bag = ROSBag(self.robot.name, res['name'])
+        logger.debug(f"Robot `{self.robot.name}` is recording bag `{res['name']}` "
+                     f"for experiment `{self.experiment}`...")
+        self.bag = ROSBag(self.robot.name, res['name'], res['local'])
 
     def start(self):
         self._do_record()
@@ -144,21 +147,21 @@ class Robot(Entity, abc.ABC):
     def status(self) -> str:
         return f"{self.name}.local"
 
-    def new_bag_recorder(self) -> ROSBagRecorder:
-        return ROSBagRecorder(self)
+    def new_bag_recorder(self, experiment: str) -> ROSBagRecorder:
+        return ROSBagRecorder(self, experiment)
 
     def is_a(self, cls) -> bool:
         return isinstance(self, cls)
 
     def download_robot_config(self, destination: str):
         os.makedirs(destination, exist_ok=True)
-        _config_zipped_url = self._api_url('files', 'config?format=tar')
+        _config_zipped_url = self._api_url('files', 'data', 'config?format=tar')
         tar_binary = requests.get(_config_zipped_url).content
         tarf = tarfile.open(fileobj=io.BytesIO(tar_binary))
         tarf.extractall(destination)
 
-    def _api_url(self, api: str, resource: str) -> str:
-        return f"http://{self.hostname}/{api}/{resource}"
+    def _api_url(self, api: str, action: str, resource: str) -> str:
+        return f"http://{self.hostname}/{api}/{action}/{resource}"
 
 
 @dataclasses.dataclass
@@ -175,22 +178,22 @@ class Autobot(Robot):
     @property
     def status(self) -> AutobotStatus:
         # get estop status
-        url = self._api_url('duckiebot', 'estop/status')
+        url = self._api_url('duckiebot', 'estop', 'status')
         data = _call_api(url)
         estop = data['engaged']
         # get motion status
-        url = self._api_url('duckiebot', 'car/status')
+        url = self._api_url('duckiebot', 'car', 'status')
         data = _call_api(url)
         moving = data['engaged']
         # ---
         return AutobotStatus(estop=estop, moving=moving)
 
     def stop(self):
-        url = self._api_url('duckiebot', 'estop/on')
+        url = self._api_url('duckiebot', 'estop', 'on')
         _call_api(url)
 
     def go(self):
-        url = self._api_url('duckiebot', 'estop/off')
+        url = self._api_url('duckiebot', 'estop', 'off')
         _call_api(url)
 
     def join(self, until: AutobotStatus, interaction=None):
@@ -361,6 +364,7 @@ class Scenario:
     environment: Dict
     player_robots: List[str]
     image_file: str
+    payload_yaml: Optional[str] = "{}"
 
 
 def _call_api(url: str, method: str = 'GET', **kwargs) -> dict:
