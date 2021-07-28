@@ -1,11 +1,11 @@
 # LIST YOUR PYTHON3 PACKAGES HERE
 
 # Duckietown libraries
-dt-authentication-daffy
+dt-authentication-ente
 
 # AIDO libraries
-duckietown-challenges-daffy
-duckietown-challenges-runner-daffy
+duckietown-challenges-ente
+duckietown-challenges-runner-ente
 
 # utilities
 docker
