@@ -215,7 +215,8 @@ class Watchtower(Robot):
     def topics(self) -> List[str]:
         return [
             f'/{self.name}/camera_node/camera_info',
-            f'/{self.name}/camera_node/image/compressed'
+            f'/{self.name}/camera_node/image/compressed',
+            f'/{self.name}/apriltag_detector_node/detections',
         ]
 
     def join(self, until: AutobotStatus):

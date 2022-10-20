@@ -1,10 +1,18 @@
 features:
   map_aido5_large_loop: 1
-  nduckiebots: 3
-  nduckies: 10
+  nduckiebots: 1
+  nduckies: 0
 
 robots:
   # autobots
+  - name: myrobot
+    type: duckiebot
+    priority: 4
+
+  - name: nyrobot
+    type: duckiebot
+    priority: 0
+
   - name: autobot01
     type: duckiebot
     priority: 3

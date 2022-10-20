@@ -10,9 +10,10 @@ from typing import Optional, cast
 
 from duckietown_challenges import dtserver_job_heartbeat, dtserver_work_submission, logger as chlogger
 from duckietown_challenges.challenges_constants import ChallengesConstants
-from duckietown_challenges.types import UserID, JobStatusString
+from duckietown_challenges.types import UserID, JobStatusString, SubmissionID
 from duckietown_challenges_runner import __version__
 from duckietown_challenges_runner.runner import get_features
+from duckietown_challenges.rest import RequestFailed
 
 from dt_authentication import DuckietownToken
 from .constants import logger, AutobotStatus, ROSBagStatus
@@ -104,18 +105,22 @@ class AIDOAutolabEvaluator(StoppableResource):
             self._job.report(status, msg=reason)
         self.clear()
 
-    def take_submission(self):
-        res = dtserver_work_submission(
-            token=self.token,
-            submission_id=None,
-            machine_id=self.machine_id,
-            process_id=self.process_id,
-            evaluator_version=self.version,
-            features=self.features,
-            reset=False,
-            timeout=ChallengesConstants.DEFAULT_TIMEOUT,
-            impersonate=self.who
-        )
+    def take_submission(self, submission_id: Optional[int] = None):
+        try:
+            res = dtserver_work_submission(
+                token=self.token,
+                submission_id=SubmissionID(submission_id),
+                machine_id=self.machine_id,
+                process_id=self.process_id,
+                evaluator_version=self.version,
+                features=self.features,
+                reset=False,
+                timeout=ChallengesConstants.DEFAULT_TIMEOUT,
+                impersonate=self.who,
+            )
+        except RequestFailed as e:
+            logger.debug(f"Request Failed: {str(e)}")
+            return
         # check if we got anything
         if "job_id" not in res:
             logger.debug("No jobs available")
@@ -164,7 +169,13 @@ class AIDOAutolabEvaluator(StoppableResource):
                             if action_name == 'stop':
                                 logger.info(f'Waiting for container `{container_name}` to stop.')
                                 # give it time to stop
-                                time.sleep(10)
+                                t = 0
+                                while t <= 10:
+                                    container.reload()
+                                    if container.status == 'exited':
+                                        break
+                                    t += 2
+                                    time.sleep(2)
                             if action_name == 'kill':
                                 logger.info(f'Container `{container_name}` did not stop. '
                                             f'Killing it.')

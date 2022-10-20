@@ -1,8 +1,9 @@
 import os
 import sys
 import time
+from inspect import isclass
 from threading import Thread
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Union
 
 import docker
 import matplotlib
@@ -25,7 +26,7 @@ from aido_autolab_evaluator.constants import logger
 
 
 MAX_EXPERIMENT_DURATION = 60
-LOCALIZATION_PRECISION_MS = 500
+LOCALIZATION_PRECISION_MS = 200
 
 
 class AIDOAutolabEvaluatorPlainInterface(DTProcess):
@@ -67,13 +68,15 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
         polling = False
         while not self.is_shutdown():
             if self._evaluator.job is None:
+                submission_id = None
                 if not polling:
                     print(f'AIDO Autolab Evaluator (v.{__version__})')
                     print(f'- Autolab Operator #{evaluator.operator.uid}')
                     # start interaction with the operator
                     interaction = Interaction(
-                        question="What do you want to do? [a] Accept new submissions, [q] Quit: ",
-                        options=['a', 'q']
+                        question="What do you want to do? [a] Accept new submissions, "
+                                 "[0-9+] Request submission ID, [q] Quit: ",
+                        options=['a', 'q', int]
                     )
                     interaction.start()
                     # wait for the operator
@@ -88,14 +91,17 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
                         evaluator.reset()
                         self.shutdown()
                         return
+                    elif isinstance(decision, int):
+                        submission_id = decision
+                        logger.info(f"Requesting job for submission with ID '{submission_id}'")
                     # ---
 
                 logger.info('Querying server for submission...')
                 polling = True
-                evaluator.take_submission()
+                evaluator.take_submission(submission_id)
                 # check if we got a job
                 if evaluator.job is None:
-                    logger.info('No job received from the challenges server. Retrying in 2 seconds.')
+                    logger.info('No job received from the server. Retrying in 2 seconds.')
                     sleep(2)
                     continue
                 # got a job, print some info
@@ -113,8 +119,8 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
                 # ask the operator what to do
                 interaction = Interaction(
                     question="What do you want to do? [a] Accept submission, [n] Get a new one, "
-                             "[q] Quit: ",
-                    options=['a', 'n', 'q']
+                             "[x] Reject, [q] Quit: ",
+                    options=['a', 'n', 'x', 'q']
                 )
                 interaction.start()
                 # wait for the operator
@@ -132,6 +138,11 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
                 if decision == 'n':
                     print('Sounds good, let\'s try again!')
                     evaluator.reset()
+                    continue
+                if decision == 'x':
+                    print('Sounds good, let\'s take a break!')
+                    evaluator.reset()
+                    polling = False
                     continue
                 polling = False
                 # ---
@@ -406,24 +417,32 @@ class AIDOAutolabEvaluatorPlainInterface(DTProcess):
 
 class Interaction(Thread, StoppableResource):
 
-    def __init__(self, question: str, options: Optional[List[str]] = None):
+    def __init__(self, question: str, options: Optional[List[Union[str, type]]] = None):
+        options = options or []
         StoppableResource.__init__(self)
         Thread.__init__(self)
         self.question = question
-        self.options = options
+        self.options = list(filter(lambda o: isinstance(o, str), options))
+        self.types = list(filter(isclass, options))
         self.answer = None
 
     def run(self):
         # ask question
         while not self.is_shutdown and self.answer is None:
             res = input(self.question).strip()
-            if self.options is None:
+            if len(self.options) + len(self.types) <= 0:
                 self.answer = res
                 break
             else:
                 if res in self.options:
                     self.answer = res
                     break
+                else:
+                    for klass in self.types:
+                        try:
+                            self.answer = klass(res)
+                        except ValueError:
+                            pass
 
 
 def render_trajectories(map_fname: str, trajectories: Dict[str, List], robots: Dict[str, Robot]):
