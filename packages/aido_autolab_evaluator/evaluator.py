@@ -242,7 +242,7 @@ class AIDOAutolabEvaluator(StoppableResource):
         for robot in self._job.get_robots(Autobot):
             autobot = cast(Autobot, robot)
             container_name = f"aido-fifos-{autobot.name}"
-            image_name = "duckietown/dt-duckiebot-fifos-bridge:daffy-amd64"
+            image_name = "duckietown/dt-duckiebot-fifos-bridge:daffy"
             # run new container
             logger.debug(f'Running "FIFOs" container for `{autobot.name}`.')
             container_cfg = {
