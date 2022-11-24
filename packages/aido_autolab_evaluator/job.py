@@ -179,7 +179,7 @@ class EvaluationJob(StoppableResource):
         # try connecting to S3
         try_s3(aws_config=self._aws_config)
         # upload artefacts
-        self._uploaded_files = upload_files(self._results_dir, aws_config=self._aws_config)
+        self._uploaded_files = upload_files(self._results_dir, aws_config=self._aws_config, copy_to_machine_cache=True)
         return self._uploaded_files
 
     def abort(self, msg: str):
