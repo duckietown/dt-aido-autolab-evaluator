@@ -1,9 +1,11 @@
 # LIST YOUR DUCKIETOWN PYTHON3 PACKAGES HERE
 # NOTE: only place Duckietown libraries here; these libraries will be resolved to the latest available version and pinned; pin a specific version only if necessary
 
+#TODO: still using 'daffy' here
 # Duckietown libraries
 dt-authentication-daffy
 
+#TODO: still using 'daffy' here
 # AIDO libraries
 duckietown-challenges-daffy
 duckietown-challenges-runner-daffy
